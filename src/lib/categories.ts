@@ -16,6 +16,20 @@ export const CATEGORIES = [
 
 export type Category = (typeof CATEGORIES)[number];
 
+// A distinct color per category, used in charts and legends.
+export const CATEGORY_COLOR: Record<string, string> = {
+  Groceries: '#22c55e',
+  Dining: '#f97316',
+  Transport: '#3b82f6',
+  Utilities: '#eab308',
+  Childcare: '#ec4899',
+  Education: '#8b5cf6',
+  Health: '#ef4444',
+  Entertainment: '#06b6d4',
+  Shopping: '#a855f7',
+  Other: '#6b7280',
+};
+
 // A little emoji for each category, used in the feed and pickers.
 export const CATEGORY_EMOJI: Record<string, string> = {
   Groceries: '🛒',

@@ -7,4 +7,6 @@ export type RootStackParamList = {
   Home: undefined;
   AddExpense: undefined;
   Budgets: undefined;
+  Members: undefined;
+  Charts: undefined;
 };

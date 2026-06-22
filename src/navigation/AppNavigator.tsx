@@ -17,6 +17,9 @@ import LoginScreen from '../screens/LoginScreen';
 import FamilySetupScreen from '../screens/FamilySetupScreen';
 import HomeScreen from '../screens/HomeScreen';
 import AddExpenseScreen from '../screens/AddExpenseScreen';
+import BudgetsScreen from '../screens/BudgetsScreen';
+import MembersScreen from '../screens/MembersScreen';
+import ChartsScreen from '../screens/ChartsScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -50,6 +53,21 @@ export default function AppNavigator() {
                 title: 'Add expense',
                 presentation: 'modal',
               }}
+            />
+            <Stack.Screen
+              name="Budgets"
+              component={BudgetsScreen}
+              options={{ headerShown: true, title: 'Budgets' }}
+            />
+            <Stack.Screen
+              name="Members"
+              component={MembersScreen}
+              options={{ headerShown: true, title: 'Family members' }}
+            />
+            <Stack.Screen
+              name="Charts"
+              component={ChartsScreen}
+              options={{ headerShown: true, title: 'Charts' }}
             />
           </>
         )}

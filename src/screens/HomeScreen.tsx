@@ -107,9 +107,22 @@ export default function HomeScreen({ navigation }: Props) {
           <Text style={styles.headerLabel}>This month</Text>
           <Text style={styles.headerTotal}>{money(monthTotal)}</Text>
         </View>
-        <TouchableOpacity onPress={signOut}>
-          <Text style={styles.signOut}>Sign out</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <View style={styles.linkRow}>
+            <TouchableOpacity onPress={() => navigation.navigate('Charts')}>
+              <Text style={styles.navLink}>Charts</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => navigation.navigate('Members')}>
+              <Text style={styles.navLink}>Members</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => navigation.navigate('Budgets')}>
+              <Text style={styles.navLink}>Budgets</Text>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity onPress={signOut}>
+            <Text style={styles.signOut}>Sign out</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loading ? (
@@ -171,7 +184,10 @@ const styles = StyleSheet.create({
   },
   headerLabel: { fontSize: 14, color: '#6b7280' },
   headerTotal: { fontSize: 34, fontWeight: '800', color: '#111827', marginTop: 2 },
-  signOut: { color: '#ef4444', fontSize: 14, fontWeight: '600', marginTop: 6 },
+  headerActions: { alignItems: 'flex-end', gap: 8, marginTop: 6 },
+  linkRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 16 },
+  navLink: { color: '#2563eb', fontSize: 14, fontWeight: '700' },
+  signOut: { color: '#ef4444', fontSize: 14, fontWeight: '600' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   list: { padding: 16, paddingBottom: 100 },
   row: {
