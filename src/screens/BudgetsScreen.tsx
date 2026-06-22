@@ -1,6 +1,5 @@
-// BudgetsScreen — set a monthly spending limit per category and see how much of
-// it you've used this month. The bar goes green -> amber -> red as you approach
-// and exceed the limit.
+// BudgetsScreen — set a monthly limit per category and see how much you've used.
+// The bar goes green -> amber -> red as you approach and exceed the limit.
 
 import { useCallback, useState } from 'react';
 import {
@@ -16,6 +15,8 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 
 import { useAuth } from '../lib/AuthContext';
+import { useTheme } from '../lib/ThemeContext';
+import { Colors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 import { CATEGORIES, CATEGORY_EMOJI } from '../lib/categories';
 
@@ -28,26 +29,27 @@ function money(n: number) {
   return `$${n.toFixed(2)}`;
 }
 
-// Pick a bar colour from how much of the limit is used (0–1+).
+// Bar colour from how much of the limit is used (these stay fixed in both themes).
 function barColor(ratio: number) {
-  if (ratio >= 1) return '#ef4444'; // red — over budget
-  if (ratio >= 0.8) return '#f59e0b'; // amber — getting close
-  return '#22c55e'; // green — healthy
+  if (ratio >= 1) return '#ef4444';
+  if (ratio >= 0.8) return '#f59e0b';
+  return '#22c55e';
 }
 
 export default function BudgetsScreen() {
   const { familyId } = useAuth();
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
 
   const [limits, setLimits] = useState<Record<string, number>>({});
   const [spent, setSpent] = useState<Record<string, number>>({});
-  const [drafts, setDrafts] = useState<Record<string, string>>({}); // text in each input
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [savingCat, setSavingCat] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!familyId) return;
 
-    // Budgets already set for this family.
     const { data: budgetRows } = await supabase
       .from('budgets')
       .select('category, monthly_limit')
@@ -62,7 +64,6 @@ export default function BudgetsScreen() {
     setLimits(limitMap);
     setDrafts(draftMap);
 
-    // This month's spending, summed per category.
     const { data: expenseRows } = await supabase
       .from('expenses')
       .select('category, amount')
@@ -99,7 +100,6 @@ export default function BudgetsScreen() {
         { onConflict: 'family_id,category' }
       );
     setSavingCat(null);
-
     if (error) {
       Alert.alert('Could not save', error.message);
       return;
@@ -110,7 +110,7 @@ export default function BudgetsScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#2563eb" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -139,27 +139,21 @@ export default function BudgetsScreen() {
               </Text>
             </View>
 
-            {/* Progress bar */}
             <View style={styles.track}>
               <View
-                style={[
-                  styles.fill,
-                  { width: `${pct}%`, backgroundColor: barColor(ratio) },
-                ]}
+                style={[styles.fill, { width: `${pct}%`, backgroundColor: barColor(ratio) }]}
               />
             </View>
 
-            {/* Limit editor */}
             <View style={styles.editRow}>
               <Text style={styles.dollar}>$</Text>
               <TextInput
                 style={styles.limitInput}
                 placeholder="Set limit"
+                placeholderTextColor={colors.subtext}
                 keyboardType="decimal-pad"
                 value={drafts[category] ?? ''}
-                onChangeText={(t) =>
-                  setDrafts((prev) => ({ ...prev, [category]: t }))
-                }
+                onChangeText={(t) => setDrafts((prev) => ({ ...prev, [category]: t }))}
               />
               <TouchableOpacity
                 style={styles.saveBtn}
@@ -167,7 +161,7 @@ export default function BudgetsScreen() {
                 disabled={savingCat === category}
               >
                 {savingCat === category ? (
-                  <ActivityIndicator color="#fff" size="small" />
+                  <ActivityIndicator color={colors.primaryText} size="small" />
                 ) : (
                   <Text style={styles.saveBtnText}>Save</Text>
                 )}
@@ -180,47 +174,44 @@ export default function BudgetsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f3f4f6' },
-  content: { padding: 16, paddingBottom: 40 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
-  intro: { fontSize: 14, color: '#6b7280', marginBottom: 16, paddingHorizontal: 4 },
-  card: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 12 },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  category: { fontSize: 16, fontWeight: '700', color: '#111827' },
-  usage: { fontSize: 14, color: '#6b7280' },
-  track: {
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#e5e7eb',
-    overflow: 'hidden',
-  },
-  fill: { height: '100%', borderRadius: 5 },
-  editRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
-  dollar: { fontSize: 16, color: '#6b7280', marginRight: 6 },
-  limitInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 15,
-    backgroundColor: '#f9fafb',
-  },
-  saveBtn: {
-    marginLeft: 10,
-    backgroundColor: '#2563eb',
-    borderRadius: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    minWidth: 70,
-    alignItems: 'center',
-  },
-  saveBtnText: { color: '#fff', fontWeight: '700' },
-});
+const makeStyles = (c: Colors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.bg },
+    content: { padding: 16, paddingBottom: 40 },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: c.bg },
+    intro: { fontSize: 14, color: c.subtext, marginBottom: 16, paddingHorizontal: 4 },
+    card: { backgroundColor: c.card, borderRadius: 12, padding: 16, marginBottom: 12 },
+    cardHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 10,
+    },
+    category: { fontSize: 16, fontWeight: '700', color: c.text },
+    usage: { fontSize: 14, color: c.subtext },
+    track: { height: 10, borderRadius: 5, backgroundColor: c.track, overflow: 'hidden' },
+    fill: { height: '100%', borderRadius: 5 },
+    editRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
+    dollar: { fontSize: 16, color: c.subtext, marginRight: 6 },
+    limitInput: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: c.border,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      fontSize: 15,
+      color: c.text,
+      backgroundColor: c.inputBg,
+    },
+    saveBtn: {
+      marginLeft: 10,
+      backgroundColor: c.primary,
+      borderRadius: 8,
+      paddingHorizontal: 18,
+      paddingVertical: 10,
+      minWidth: 70,
+      alignItems: 'center',
+    },
+    saveBtnText: { color: c.primaryText, fontWeight: '700' },
+  });

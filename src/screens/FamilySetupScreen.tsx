@@ -1,9 +1,5 @@
 // FamilySetupScreen — shown right after login if the user isn't in a family yet.
-// Two choices: create a brand new family, or join an existing one with an invite code.
-//
-// Both actions call database functions (create_family / join_family) that handle the
-// work safely on the server. After success we refresh AuthContext and the navigator
-// moves the user to Home.
+// Create a new family, or join an existing one with an invite code.
 
 import { useState } from 'react';
 import {
@@ -16,10 +12,14 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../lib/AuthContext';
+import { useTheme } from '../lib/ThemeContext';
+import { Colors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 
 export default function FamilySetupScreen() {
   const { signOut, refreshFamily } = useAuth();
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
 
   const [tab, setTab] = useState<'create' | 'join'>('create');
   const [familyName, setFamilyName] = useState('');
@@ -36,12 +36,11 @@ export default function FamilySetupScreen() {
       family_name: familyName.trim(),
     });
     setBusy(false);
-
     if (error) {
       Alert.alert('Could not create family', error.message);
       return;
     }
-    await refreshFamily(); // navigator now sends us to Home
+    await refreshFamily();
   }
 
   async function handleJoin() {
@@ -50,11 +49,8 @@ export default function FamilySetupScreen() {
       return;
     }
     setBusy(true);
-    const { error } = await supabase.rpc('join_family', {
-      code: inviteCode.trim(),
-    });
+    const { error } = await supabase.rpc('join_family', { code: inviteCode.trim() });
     setBusy(false);
-
     if (error) {
       Alert.alert('Could not join', error.message);
       return;
@@ -69,7 +65,6 @@ export default function FamilySetupScreen() {
         Create a new family group, or join one with an invite code.
       </Text>
 
-      {/* Tab switcher */}
       <View style={styles.tabs}>
         <TouchableOpacity
           style={[styles.tab, tab === 'create' && styles.tabActive]}
@@ -94,6 +89,7 @@ export default function FamilySetupScreen() {
           <TextInput
             style={styles.input}
             placeholder="Family name (e.g. The Smiths)"
+            placeholderTextColor={colors.subtext}
             value={familyName}
             onChangeText={setFamilyName}
             editable={!busy}
@@ -104,7 +100,7 @@ export default function FamilySetupScreen() {
             disabled={busy}
           >
             {busy ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={colors.primaryText} />
             ) : (
               <Text style={styles.buttonText}>Create family</Text>
             )}
@@ -115,6 +111,7 @@ export default function FamilySetupScreen() {
           <TextInput
             style={styles.input}
             placeholder="Invite code"
+            placeholderTextColor={colors.subtext}
             autoCapitalize="characters"
             value={inviteCode}
             onChangeText={setInviteCode}
@@ -126,7 +123,7 @@ export default function FamilySetupScreen() {
             disabled={busy}
           >
             {busy ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={colors.primaryText} />
             ) : (
               <Text style={styles.buttonText}>Join family</Text>
             )}
@@ -141,55 +138,52 @@ export default function FamilySetupScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    backgroundColor: '#fff',
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#111827',
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 15,
-    color: '#6b7280',
-    textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 28,
-  },
-  tabs: {
-    flexDirection: 'row',
-    backgroundColor: '#f3f4f6',
-    borderRadius: 10,
-    padding: 4,
-    marginBottom: 20,
-  },
-  tab: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
-  tabActive: { backgroundColor: '#fff' },
-  tabText: { color: '#6b7280', fontWeight: '600' },
-  tabTextActive: { color: '#2563eb' },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    marginBottom: 14,
-    backgroundColor: '#f9fafb',
-  },
-  button: {
-    backgroundColor: '#2563eb',
-    borderRadius: 10,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  signOut: { marginTop: 32, alignItems: 'center' },
-  signOutText: { color: '#9ca3af', fontSize: 14 },
-});
+const makeStyles = (c: Colors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      justifyContent: 'center',
+      paddingHorizontal: 24,
+      backgroundColor: c.bg,
+    },
+    title: { fontSize: 26, fontWeight: '800', color: c.text, textAlign: 'center' },
+    subtitle: {
+      fontSize: 15,
+      color: c.subtext,
+      textAlign: 'center',
+      marginTop: 8,
+      marginBottom: 28,
+    },
+    tabs: {
+      flexDirection: 'row',
+      backgroundColor: c.chip,
+      borderRadius: 10,
+      padding: 4,
+      marginBottom: 20,
+    },
+    tab: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+    tabActive: { backgroundColor: c.card },
+    tabText: { color: c.subtext, fontWeight: '600' },
+    tabTextActive: { color: c.primary },
+    input: {
+      borderWidth: 1,
+      borderColor: c.border,
+      borderRadius: 10,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      fontSize: 16,
+      marginBottom: 14,
+      color: c.text,
+      backgroundColor: c.inputBg,
+    },
+    button: {
+      backgroundColor: c.primary,
+      borderRadius: 10,
+      paddingVertical: 16,
+      alignItems: 'center',
+    },
+    buttonDisabled: { opacity: 0.6 },
+    buttonText: { color: c.primaryText, fontSize: 16, fontWeight: '700' },
+    signOut: { marginTop: 32, alignItems: 'center' },
+    signOutText: { color: c.subtext, fontSize: 14 },
+  });

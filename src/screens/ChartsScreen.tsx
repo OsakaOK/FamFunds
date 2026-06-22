@@ -1,19 +1,15 @@
 // ChartsScreen — visual breakdown of this month's spending.
-//   * Pie chart: each category's share of the total (drawn with SVG).
+//   * Pie/donut chart: each category's share of the total (drawn with SVG).
 //   * Bar list: spend per category, largest first.
 
 import { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import Svg, { G, Path, Circle } from 'react-native-svg';
 
 import { useAuth } from '../lib/AuthContext';
+import { useTheme } from '../lib/ThemeContext';
+import { Colors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 import { CATEGORY_COLOR, CATEGORY_EMOJI } from '../lib/categories';
 
@@ -26,20 +22,12 @@ function money(n: number) {
   return `$${n.toFixed(2)}`;
 }
 
-// --- SVG pie helpers --------------------------------------------------------
 function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
   const a = ((angleDeg - 90) * Math.PI) / 180;
   return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
 }
 
-// Build the SVG path for one pie slice between two angles.
-function slicePath(
-  cx: number,
-  cy: number,
-  r: number,
-  startAngle: number,
-  endAngle: number
-) {
+function slicePath(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
   const start = polarToCartesian(cx, cy, r, endAngle);
   const end = polarToCartesian(cx, cy, r, startAngle);
   const largeArc = endAngle - startAngle <= 180 ? 0 : 1;
@@ -50,6 +38,8 @@ type Slice = { category: string; total: number };
 
 export default function ChartsScreen() {
   const { familyId } = useAuth();
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
 
   const [slices, setSlices] = useState<Slice[]>([]);
   const [total, setTotal] = useState(0);
@@ -90,7 +80,7 @@ export default function ChartsScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#2563eb" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -104,7 +94,6 @@ export default function ChartsScreen() {
     );
   }
 
-  // Pie geometry.
   const size = 220;
   const radius = size / 2;
   let angle = 0;
@@ -115,7 +104,6 @@ export default function ChartsScreen() {
       <Text style={styles.totalLabel}>This month</Text>
       <Text style={styles.total}>{money(total)}</Text>
 
-      {/* Pie chart */}
       <View style={styles.pieWrap}>
         <Svg width={size} height={size}>
           <G>
@@ -124,20 +112,14 @@ export default function ChartsScreen() {
               const path = slicePath(radius, radius, radius, angle, angle + sweep);
               angle += sweep;
               return (
-                <Path
-                  key={s.category}
-                  d={path}
-                  fill={CATEGORY_COLOR[s.category] ?? '#9ca3af'}
-                />
+                <Path key={s.category} d={path} fill={CATEGORY_COLOR[s.category] ?? '#9ca3af'} />
               );
             })}
-            {/* donut hole */}
-            <Circle cx={radius} cy={radius} r={radius * 0.55} fill="#fff" />
+            <Circle cx={radius} cy={radius} r={radius * 0.55} fill={colors.bg} />
           </G>
         </Svg>
       </View>
 
-      {/* Bar list */}
       <Text style={styles.sectionTitle}>By category</Text>
       {slices.map((s) => {
         const pct = total > 0 ? (s.total / total) * 100 : 0;
@@ -154,9 +136,7 @@ export default function ChartsScreen() {
               </Text>
             </View>
             <View style={styles.track}>
-              <View
-                style={[styles.fill, { width: `${barWidth}%`, backgroundColor: color }]}
-              />
+              <View style={[styles.fill, { width: `${barWidth}%`, backgroundColor: color }]} />
             </View>
           </View>
         );
@@ -165,44 +145,45 @@ export default function ChartsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f3f4f6' },
-  content: { padding: 16, paddingBottom: 40 },
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    padding: 24,
-  },
-  totalLabel: { fontSize: 14, color: '#6b7280', textAlign: 'center', marginTop: 8 },
-  total: {
-    fontSize: 34,
-    fontWeight: '800',
-    color: '#111827',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  pieWrap: { alignItems: 'center', marginVertical: 16 },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#374151',
-    marginTop: 12,
-    marginBottom: 12,
-    paddingHorizontal: 4,
-  },
-  barRow: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10 },
-  barHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  barLabel: { fontSize: 15, fontWeight: '700', color: '#111827' },
-  barAmount: { fontSize: 14, color: '#6b7280' },
-  track: { height: 10, borderRadius: 5, backgroundColor: '#e5e7eb', overflow: 'hidden' },
-  fill: { height: '100%', borderRadius: 5 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#374151' },
-  emptyText: { fontSize: 14, color: '#9ca3af', marginTop: 6, textAlign: 'center' },
-});
+const makeStyles = (c: Colors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.bg },
+    content: { padding: 16, paddingBottom: 40 },
+    center: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: c.bg,
+      padding: 24,
+    },
+    totalLabel: { fontSize: 14, color: c.subtext, textAlign: 'center', marginTop: 8 },
+    total: {
+      fontSize: 34,
+      fontWeight: '800',
+      color: c.text,
+      textAlign: 'center',
+      marginBottom: 8,
+    },
+    pieWrap: { alignItems: 'center', marginVertical: 16 },
+    sectionTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: c.text,
+      marginTop: 12,
+      marginBottom: 12,
+      paddingHorizontal: 4,
+    },
+    barRow: { backgroundColor: c.card, borderRadius: 12, padding: 14, marginBottom: 10 },
+    barHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    barLabel: { fontSize: 15, fontWeight: '700', color: c.text },
+    barAmount: { fontSize: 14, color: c.subtext },
+    track: { height: 10, borderRadius: 5, backgroundColor: c.track, overflow: 'hidden' },
+    fill: { height: '100%', borderRadius: 5 },
+    emptyTitle: { fontSize: 18, fontWeight: '700', color: c.text },
+    emptyText: { fontSize: 14, color: c.subtext, marginTop: 6, textAlign: 'center' },
+  });

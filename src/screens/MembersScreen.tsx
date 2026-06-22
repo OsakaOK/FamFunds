@@ -12,6 +12,8 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 
 import { useAuth } from '../lib/AuthContext';
+import { useTheme } from '../lib/ThemeContext';
+import { Colors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 
 function startOfMonth() {
@@ -23,15 +25,12 @@ function money(n: number) {
   return `$${n.toFixed(2)}`;
 }
 
-type MemberRow = {
-  userId: string;
-  name: string;
-  role: string;
-  total: number;
-};
+type MemberRow = { userId: string; name: string; role: string; total: number };
 
 export default function MembersScreen() {
   const { user, familyId } = useAuth();
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
 
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [inviteCode, setInviteCode] = useState('');
@@ -41,7 +40,6 @@ export default function MembersScreen() {
   const load = useCallback(async () => {
     if (!familyId) return;
 
-    // Family info (name + invite code).
     const { data: family } = await supabase
       .from('families')
       .select('invite_code')
@@ -49,14 +47,12 @@ export default function MembersScreen() {
       .maybeSingle();
     if (family) setInviteCode(family.invite_code);
 
-    // Who's in the family.
     const { data: memberRows } = await supabase
       .from('family_members')
       .select('user_id, role')
       .eq('family_id', familyId);
     const rows = memberRows ?? [];
 
-    // Their display names.
     const ids = rows.map((m) => m.user_id);
     const { data: profiles } = await supabase
       .from('profiles')
@@ -67,7 +63,6 @@ export default function MembersScreen() {
       nameMap[p.id] = p.full_name || p.email || 'Member';
     });
 
-    // This month's spending, summed per person.
     const { data: expenseRows } = await supabase
       .from('expenses')
       .select('user_id, amount')
@@ -89,7 +84,7 @@ export default function MembersScreen() {
         role: m.role,
         total: spentMap[m.user_id] ?? 0,
       }))
-      .sort((a, b) => b.total - a.total); // biggest spender first
+      .sort((a, b) => b.total - a.total);
     setMembers(built);
     setLoading(false);
   }, [familyId]);
@@ -103,14 +98,13 @@ export default function MembersScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#2563eb" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Invite code card */}
       <View style={styles.inviteCard}>
         <Text style={styles.inviteLabel}>Invite code</Text>
         <Text style={styles.inviteCode}>{inviteCode}</Text>
@@ -146,43 +140,44 @@ export default function MembersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f3f4f6' },
-  content: { padding: 16, paddingBottom: 40 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
-  inviteCard: {
-    backgroundColor: '#eff6ff',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  inviteLabel: { fontSize: 13, color: '#6b7280' },
-  inviteCode: {
-    fontSize: 30,
-    fontWeight: '800',
-    letterSpacing: 4,
-    color: '#2563eb',
-    marginVertical: 4,
-  },
-  inviteHint: { fontSize: 13, color: '#6b7280', textAlign: 'center' },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#374151',
-    marginBottom: 12,
-    paddingHorizontal: 4,
-  },
-  card: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 12 },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  name: { fontSize: 16, fontWeight: '700', color: '#111827' },
-  amount: { fontSize: 16, fontWeight: '800', color: '#111827' },
-  track: { height: 10, borderRadius: 5, backgroundColor: '#e5e7eb', overflow: 'hidden' },
-  fill: { height: '100%', borderRadius: 5, backgroundColor: '#2563eb' },
-  shareText: { fontSize: 13, color: '#6b7280', marginTop: 6 },
-});
+const makeStyles = (c: Colors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.bg },
+    content: { padding: 16, paddingBottom: 40 },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: c.bg },
+    inviteCard: {
+      backgroundColor: c.accentBg,
+      borderRadius: 12,
+      padding: 16,
+      alignItems: 'center',
+      marginBottom: 20,
+    },
+    inviteLabel: { fontSize: 13, color: c.subtext },
+    inviteCode: {
+      fontSize: 30,
+      fontWeight: '800',
+      letterSpacing: 4,
+      color: c.primary,
+      marginVertical: 4,
+    },
+    inviteHint: { fontSize: 13, color: c.subtext, textAlign: 'center' },
+    sectionTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: c.text,
+      marginBottom: 12,
+      paddingHorizontal: 4,
+    },
+    card: { backgroundColor: c.card, borderRadius: 12, padding: 16, marginBottom: 12 },
+    cardHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 10,
+    },
+    name: { fontSize: 16, fontWeight: '700', color: c.text },
+    amount: { fontSize: 16, fontWeight: '800', color: c.text },
+    track: { height: 10, borderRadius: 5, backgroundColor: c.track, overflow: 'hidden' },
+    fill: { height: '100%', borderRadius: 5, backgroundColor: c.primary },
+    shareText: { fontSize: 13, color: c.subtext, marginTop: 6 },
+  });

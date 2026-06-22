@@ -9,4 +9,5 @@ export type RootStackParamList = {
   Budgets: undefined;
   Members: undefined;
   Charts: undefined;
+  Settings: undefined;
 };

@@ -1,4 +1,4 @@
-// LoginScreen — one screen that handles both signing in and creating an account.
+// LoginScreen — handles both signing in and creating an account.
 // Toggle between the two modes with the link at the bottom.
 
 import { useState } from 'react';
@@ -11,13 +11,16 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
 } from 'react-native';
 import { useAuth } from '../lib/AuthContext';
+import { useTheme } from '../lib/ThemeContext';
+import { Colors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 
 export default function LoginScreen() {
   const { signIn, signUp } = useAuth();
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
 
   const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn');
   const [email, setEmail] = useState('');
@@ -46,7 +49,6 @@ export default function LoginScreen() {
       );
       setMode('signIn');
     }
-    // On a successful sign in, AuthContext updates and the navigator moves us on.
   }
 
   async function handleForgotPassword() {
@@ -72,6 +74,7 @@ export default function LoginScreen() {
       <TextInput
         style={styles.input}
         placeholder="Email"
+        placeholderTextColor={colors.subtext}
         autoCapitalize="none"
         keyboardType="email-address"
         value={email}
@@ -81,6 +84,7 @@ export default function LoginScreen() {
       <TextInput
         style={styles.input}
         placeholder="Password"
+        placeholderTextColor={colors.subtext}
         secureTextEntry
         value={password}
         onChangeText={setPassword}
@@ -93,7 +97,7 @@ export default function LoginScreen() {
         disabled={busy}
       >
         {busy ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color={colors.primaryText} />
         ) : (
           <Text style={styles.buttonText}>
             {isSignUp ? 'Create account' : 'Sign in'}
@@ -115,57 +119,44 @@ export default function LoginScreen() {
         <Text style={styles.toggleText}>
           {isSignUp
             ? 'Already have an account? Sign in'
-            : "New here? Create an account"}
+            : 'New here? Create an account'}
         </Text>
       </TouchableOpacity>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    backgroundColor: '#fff',
-  },
-  logo: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#2563eb',
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 15,
-    color: '#6b7280',
-    textAlign: 'center',
-    marginBottom: 32,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    marginBottom: 14,
-    backgroundColor: '#f9fafb',
-  },
-  button: {
-    backgroundColor: '#2563eb',
-    borderRadius: 10,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  link: {
-    color: '#2563eb',
-    textAlign: 'center',
-    marginTop: 16,
-    fontSize: 14,
-  },
-  toggle: { marginTop: 28, alignItems: 'center' },
-  toggleText: { color: '#374151', fontSize: 14 },
-});
+const makeStyles = (c: Colors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      justifyContent: 'center',
+      paddingHorizontal: 24,
+      backgroundColor: c.bg,
+    },
+    logo: { fontSize: 36, fontWeight: '800', color: c.primary, textAlign: 'center' },
+    subtitle: { fontSize: 15, color: c.subtext, textAlign: 'center', marginBottom: 32 },
+    input: {
+      borderWidth: 1,
+      borderColor: c.border,
+      borderRadius: 10,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      fontSize: 16,
+      marginBottom: 14,
+      color: c.text,
+      backgroundColor: c.inputBg,
+    },
+    button: {
+      backgroundColor: c.primary,
+      borderRadius: 10,
+      paddingVertical: 16,
+      alignItems: 'center',
+      marginTop: 4,
+    },
+    buttonDisabled: { opacity: 0.6 },
+    buttonText: { color: c.primaryText, fontSize: 16, fontWeight: '700' },
+    link: { color: c.primary, textAlign: 'center', marginTop: 16, fontSize: 14 },
+    toggle: { marginTop: 28, alignItems: 'center' },
+    toggleText: { color: c.text, fontSize: 14 },
+  });

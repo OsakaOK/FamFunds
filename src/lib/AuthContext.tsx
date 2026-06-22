@@ -17,11 +17,13 @@ type AuthContextValue = {
   session: Session | null;
   user: User | null;
   familyId: string | null;
+  profileName: string | null; // the display name shown instead of email
   loading: boolean; // still figuring out session + family on app start
   signIn: (email: string, password: string) => Promise<AuthResult>;
   signUp: (email: string, password: string) => Promise<AuthResult>;
   signOut: () => Promise<void>;
   refreshFamily: () => Promise<void>; // call after creating/joining a family
+  updateProfileName: (name: string) => Promise<AuthResult>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -29,7 +31,22 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [familyId, setFamilyId] = useState<string | null>(null);
+  const [profileName, setProfileName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Load the logged-in user's display name from their profile.
+  async function loadProfile(currentSession: Session | null) {
+    if (!currentSession) {
+      setProfileName(null);
+      return;
+    }
+    const { data } = await supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('id', currentSession.user.id)
+      .maybeSingle();
+    setProfileName(data?.full_name ?? null);
+  }
 
   // Look up which family (if any) the logged-in user belongs to.
   async function loadFamily(currentSession: Session | null) {
@@ -56,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 1. Get whatever session is already saved on this device.
     supabase.auth.getSession().then(async ({ data }) => {
       setSession(data.session);
-      await loadFamily(data.session);
+      await Promise.all([loadFamily(data.session), loadProfile(data.session)]);
       setLoading(false);
     });
 
@@ -64,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: listener } = supabase.auth.onAuthStateChange(
       async (_event, newSession) => {
         setSession(newSession);
-        await loadFamily(newSession);
+        await Promise.all([loadFamily(newSession), loadProfile(newSession)]);
       }
     );
 
@@ -96,15 +113,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await loadFamily(session);
   }
 
+  async function updateProfileName(name: string): Promise<AuthResult> {
+    if (!session) return { error: 'Not signed in' };
+    const { error } = await supabase
+      .from('profiles')
+      .update({ full_name: name.trim() })
+      .eq('id', session.user.id);
+    if (!error) setProfileName(name.trim());
+    return { error: error?.message ?? null };
+  }
+
   const value: AuthContextValue = {
     session,
     user: session?.user ?? null,
     familyId,
+    profileName,
     loading,
     signIn,
     signUp,
     signOut,
     refreshFamily,
+    updateProfileName,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
