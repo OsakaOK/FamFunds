@@ -13,13 +13,10 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext';
+import { useMonth } from '../lib/MonthContext';
 import { Colors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
-
-function startOfMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-}
+import MonthSwitcher from '../components/MonthSwitcher';
 
 function money(n: number) {
   return `$${n.toFixed(2)}`;
@@ -30,6 +27,7 @@ type MemberRow = { userId: string; name: string; role: string; total: number };
 export default function MembersScreen() {
   const { user, familyId } = useAuth();
   const { colors } = useTheme();
+  const { range } = useMonth();
   const styles = makeStyles(colors);
 
   const [members, setMembers] = useState<MemberRow[]>([]);
@@ -67,7 +65,8 @@ export default function MembersScreen() {
       .from('expenses')
       .select('user_id, amount')
       .eq('family_id', familyId)
-      .gte('spent_on', startOfMonth());
+      .gte('spent_on', range.start)
+      .lt('spent_on', range.endExclusive);
     const spentMap: Record<string, number> = {};
     let total = 0;
     (expenseRows ?? []).forEach((e) => {
@@ -87,7 +86,7 @@ export default function MembersScreen() {
       .sort((a, b) => b.total - a.total);
     setMembers(built);
     setLoading(false);
-  }, [familyId]);
+  }, [familyId, range.start, range.endExclusive]);
 
   useFocusEffect(
     useCallback(() => {
@@ -113,7 +112,8 @@ export default function MembersScreen() {
         </Text>
       </View>
 
-      <Text style={styles.sectionTitle}>Spending this month</Text>
+      <MonthSwitcher />
+      <Text style={styles.sectionTitle}>Spending breakdown</Text>
 
       {members.map((m) => {
         const share = familyTotal > 0 ? m.total / familyTotal : 0;

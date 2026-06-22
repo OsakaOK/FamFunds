@@ -16,14 +16,11 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext';
+import { useMonth } from '../lib/MonthContext';
 import { Colors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 import { CATEGORIES, CATEGORY_EMOJI } from '../lib/categories';
-
-function startOfMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-}
+import MonthSwitcher from '../components/MonthSwitcher';
 
 function money(n: number) {
   return `$${n.toFixed(2)}`;
@@ -39,6 +36,7 @@ function barColor(ratio: number) {
 export default function BudgetsScreen() {
   const { familyId } = useAuth();
   const { colors } = useTheme();
+  const { range } = useMonth();
   const styles = makeStyles(colors);
 
   const [limits, setLimits] = useState<Record<string, number>>({});
@@ -68,7 +66,8 @@ export default function BudgetsScreen() {
       .from('expenses')
       .select('category, amount')
       .eq('family_id', familyId)
-      .gte('spent_on', startOfMonth());
+      .gte('spent_on', range.start)
+      .lt('spent_on', range.endExclusive);
 
     const spentMap: Record<string, number> = {};
     (expenseRows ?? []).forEach((e) => {
@@ -76,7 +75,7 @@ export default function BudgetsScreen() {
     });
     setSpent(spentMap);
     setLoading(false);
-  }, [familyId]);
+  }, [familyId, range.start, range.endExclusive]);
 
   useFocusEffect(
     useCallback(() => {
@@ -117,9 +116,10 @@ export default function BudgetsScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <MonthSwitcher />
       <Text style={styles.intro}>
-        Set a monthly limit for each category. Bars turn amber at 80% and red when
-        you go over.
+        Limits are monthly. Bars show the selected month's spend — amber at 80%,
+        red when you go over.
       </Text>
 
       {CATEGORIES.map((category) => {

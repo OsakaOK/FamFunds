@@ -1,6 +1,7 @@
-// ChartsScreen — visual breakdown of this month's spending.
+// ChartsScreen — visual breakdown of the SELECTED month's spending.
 //   * Pie/donut chart: each category's share of the total (drawn with SVG).
 //   * Bar list: spend per category, largest first.
+// The month switcher stays visible even when a month has no data.
 
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -9,14 +10,11 @@ import Svg, { G, Path, Circle } from 'react-native-svg';
 
 import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext';
+import { useMonth } from '../lib/MonthContext';
 import { Colors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 import { CATEGORY_COLOR, CATEGORY_EMOJI } from '../lib/categories';
-
-function startOfMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-}
+import MonthSwitcher from '../components/MonthSwitcher';
 
 function money(n: number) {
   return `$${n.toFixed(2)}`;
@@ -39,6 +37,7 @@ type Slice = { category: string; total: number };
 export default function ChartsScreen() {
   const { familyId } = useAuth();
   const { colors } = useTheme();
+  const { range } = useMonth();
   const styles = makeStyles(colors);
 
   const [slices, setSlices] = useState<Slice[]>([]);
@@ -47,12 +46,14 @@ export default function ChartsScreen() {
 
   const load = useCallback(async () => {
     if (!familyId) return;
+    setLoading(true);
 
     const { data } = await supabase
       .from('expenses')
       .select('category, amount')
       .eq('family_id', familyId)
-      .gte('spent_on', startOfMonth());
+      .gte('spent_on', range.start)
+      .lt('spent_on', range.endExclusive);
 
     const byCategory: Record<string, number> = {};
     let sum = 0;
@@ -69,7 +70,7 @@ export default function ChartsScreen() {
     setSlices(built);
     setTotal(sum);
     setLoading(false);
-  }, [familyId]);
+  }, [familyId, range.start, range.endExclusive]);
 
   useFocusEffect(
     useCallback(() => {
@@ -77,70 +78,65 @@ export default function ChartsScreen() {
     }, [load])
   );
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
-
-  if (total === 0) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.emptyTitle}>No spending yet this month</Text>
-        <Text style={styles.emptyText}>Add some expenses to see the charts.</Text>
-      </View>
-    );
-  }
-
   const size = 220;
   const radius = size / 2;
   let angle = 0;
-  const maxBar = Math.max(...slices.map((s) => s.total));
+  const maxBar = slices.length ? Math.max(...slices.map((s) => s.total)) : 0;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.totalLabel}>This month</Text>
-      <Text style={styles.total}>{money(total)}</Text>
+      <MonthSwitcher />
 
-      <View style={styles.pieWrap}>
-        <Svg width={size} height={size}>
-          <G>
-            {slices.map((s) => {
-              const sweep = (s.total / total) * 360;
-              const path = slicePath(radius, radius, radius, angle, angle + sweep);
-              angle += sweep;
-              return (
-                <Path key={s.category} d={path} fill={CATEGORY_COLOR[s.category] ?? '#9ca3af'} />
-              );
-            })}
-            <Circle cx={radius} cy={radius} r={radius * 0.55} fill={colors.bg} />
-          </G>
-        </Svg>
-      </View>
+      {loading ? (
+        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 60 }} />
+      ) : total === 0 ? (
+        <View style={styles.empty}>
+          <Text style={styles.emptyTitle}>No spending this month</Text>
+          <Text style={styles.emptyText}>Add expenses, or step to another month above.</Text>
+        </View>
+      ) : (
+        <>
+          <Text style={styles.total}>{money(total)}</Text>
 
-      <Text style={styles.sectionTitle}>By category</Text>
-      {slices.map((s) => {
-        const pct = total > 0 ? (s.total / total) * 100 : 0;
-        const barWidth = maxBar > 0 ? (s.total / maxBar) * 100 : 0;
-        const color = CATEGORY_COLOR[s.category] ?? '#9ca3af';
-        return (
-          <View key={s.category} style={styles.barRow}>
-            <View style={styles.barHeader}>
-              <Text style={styles.barLabel}>
-                {CATEGORY_EMOJI[s.category]} {s.category}
-              </Text>
-              <Text style={styles.barAmount}>
-                {money(s.total)} · {pct.toFixed(0)}%
-              </Text>
-            </View>
-            <View style={styles.track}>
-              <View style={[styles.fill, { width: `${barWidth}%`, backgroundColor: color }]} />
-            </View>
+          <View style={styles.pieWrap}>
+            <Svg width={size} height={size}>
+              <G>
+                {slices.map((s) => {
+                  const sweep = (s.total / total) * 360;
+                  const path = slicePath(radius, radius, radius, angle, angle + sweep);
+                  angle += sweep;
+                  return (
+                    <Path key={s.category} d={path} fill={CATEGORY_COLOR[s.category] ?? '#9ca3af'} />
+                  );
+                })}
+                <Circle cx={radius} cy={radius} r={radius * 0.55} fill={colors.bg} />
+              </G>
+            </Svg>
           </View>
-        );
-      })}
+
+          <Text style={styles.sectionTitle}>By category</Text>
+          {slices.map((s) => {
+            const pct = total > 0 ? (s.total / total) * 100 : 0;
+            const barWidth = maxBar > 0 ? (s.total / maxBar) * 100 : 0;
+            const color = CATEGORY_COLOR[s.category] ?? '#9ca3af';
+            return (
+              <View key={s.category} style={styles.barRow}>
+                <View style={styles.barHeader}>
+                  <Text style={styles.barLabel}>
+                    {CATEGORY_EMOJI[s.category]} {s.category}
+                  </Text>
+                  <Text style={styles.barAmount}>
+                    {money(s.total)} · {pct.toFixed(0)}%
+                  </Text>
+                </View>
+                <View style={styles.track}>
+                  <View style={[styles.fill, { width: `${barWidth}%`, backgroundColor: color }]} />
+                </View>
+              </View>
+            );
+          })}
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -149,19 +145,12 @@ const makeStyles = (c: Colors) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: c.bg },
     content: { padding: 16, paddingBottom: 40 },
-    center: {
-      flex: 1,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: c.bg,
-      padding: 24,
-    },
-    totalLabel: { fontSize: 14, color: c.subtext, textAlign: 'center', marginTop: 8 },
     total: {
       fontSize: 34,
       fontWeight: '800',
       color: c.text,
       textAlign: 'center',
+      marginTop: 16,
       marginBottom: 8,
     },
     pieWrap: { alignItems: 'center', marginVertical: 16 },
@@ -184,6 +173,7 @@ const makeStyles = (c: Colors) =>
     barAmount: { fontSize: 14, color: c.subtext },
     track: { height: 10, borderRadius: 5, backgroundColor: c.track, overflow: 'hidden' },
     fill: { height: '100%', borderRadius: 5 },
+    empty: { alignItems: 'center', marginTop: 70, paddingHorizontal: 24 },
     emptyTitle: { fontSize: 18, fontWeight: '700', color: c.text },
     emptyText: { fontSize: 14, color: c.subtext, marginTop: 6, textAlign: 'center' },
   });

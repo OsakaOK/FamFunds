@@ -1,13 +1,12 @@
 // The default expense categories that ship with the app (from the project plan).
 // Kept in one place so every screen uses the same list.
 
+// The categories families can pick from. (Transport, Utilities, Childcare, and
+// Education were trimmed at the user's request — their emoji/colors are kept
+// below so any older expenses that used them still render nicely.)
 export const CATEGORIES = [
   'Groceries',
   'Dining',
-  'Transport',
-  'Utilities',
-  'Childcare',
-  'Education',
   'Health',
   'Entertainment',
   'Shopping',

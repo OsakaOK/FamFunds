@@ -5,7 +5,8 @@ export type RootStackParamList = {
   Login: undefined;
   FamilySetup: undefined;
   Home: undefined;
-  AddExpense: undefined;
+  // When expenseId is present, Add Expense opens in "edit" mode for that row.
+  AddExpense: { expenseId?: string } | undefined;
   Budgets: undefined;
   Members: undefined;
   Charts: undefined;

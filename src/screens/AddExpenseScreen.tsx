@@ -1,9 +1,10 @@
-// AddExpenseScreen — log a new expense.
-//   * Category: a swipeable slider (swipe left/right; the centered one is picked).
-//   * Date: tap to open a calendar.
-//   * Amount + optional note.
+// AddExpenseScreen — log a new expense, OR edit/delete an existing one.
+// When navigated with { expenseId }, it loads that row, pre-fills the form,
+// switches "Save" to update, and shows a Delete button. You can only open this
+// for your OWN expenses (Home only makes your own rows tappable), and the
+// database rules enforce the same.
 
-import { useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -28,6 +29,7 @@ import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext';
 import { Colors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
+import { todayLocal } from '../lib/dates';
 import { CATEGORIES, CATEGORY_EMOJI } from '../lib/categories';
 import { RootStackParamList } from '../navigation/types';
 
@@ -37,26 +39,70 @@ const ITEM_WIDTH = 120;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SIDE_PAD = Math.max((SCREEN_WIDTH - ITEM_WIDTH) / 2, 16);
 
-function today() {
-  return new Date().toISOString().slice(0, 10);
+// Cross-platform confirm (react-native-web's Alert doesn't show buttons).
+function confirmDelete(onYes: () => void) {
+  if (Platform.OS === 'web') {
+    if ((globalThis as any).confirm?.('Delete this expense? This cannot be undone.')) {
+      onYes();
+    }
+  } else {
+    Alert.alert('Delete expense?', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: onYes },
+    ]);
+  }
 }
 
-export default function AddExpenseScreen({ navigation }: Props) {
+export default function AddExpenseScreen({ navigation, route }: Props) {
   const { user, familyId } = useAuth();
   const { colors } = useTheme();
   const styles = makeStyles(colors);
 
+  const expenseId = route.params?.expenseId;
+  const isEditing = !!expenseId;
+
   const [amount, setAmount] = useState('');
-  const [categoryIndex, setCategoryIndex] = useState(0); // index into CATEGORIES
-  const [date, setDate] = useState(today());
+  const [categoryIndex, setCategoryIndex] = useState(0);
+  const [date, setDate] = useState(todayLocal());
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [loadingExpense, setLoadingExpense] = useState(isEditing);
   const [showCalendar, setShowCalendar] = useState(false);
 
   const listRef = useRef<FlatList>(null);
   const category = CATEGORIES[categoryIndex];
 
-  // Keep the picked category in sync with whatever is centered in the slider.
+  // Title in the header reflects the mode.
+  useLayoutEffect(() => {
+    navigation.setOptions({ title: isEditing ? 'Edit expense' : 'Add expense' });
+  }, [navigation, isEditing]);
+
+  // In edit mode, load the existing expense and pre-fill the form.
+  useEffect(() => {
+    if (!expenseId) return;
+    supabase
+      .from('expenses')
+      .select('amount, category, note, spent_on')
+      .eq('id', expenseId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          setAmount(String(data.amount));
+          setNote(data.note ?? '');
+          setDate(data.spent_on);
+          const idx = CATEGORIES.indexOf(data.category);
+          const safeIdx = idx >= 0 ? idx : 0;
+          setCategoryIndex(safeIdx);
+          // Center the slider on the pre-filled category.
+          setTimeout(
+            () => listRef.current?.scrollToOffset({ offset: safeIdx * ITEM_WIDTH, animated: false }),
+            0
+          );
+        }
+        setLoadingExpense(false);
+      });
+  }, [expenseId]);
+
   function onSliderScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
     const index = Math.round(e.nativeEvent.contentOffset.x / ITEM_WIDTH);
     const clamped = Math.min(Math.max(index, 0), CATEGORIES.length - 1);
@@ -77,14 +123,15 @@ export default function AddExpenseScreen({ navigation }: Props) {
     if (!user || !familyId) return;
 
     setBusy(true);
-    const { error } = await supabase.from('expenses').insert({
-      family_id: familyId,
-      user_id: user.id,
+    const fields = {
       amount: numericAmount,
       category,
       note: note.trim() || null,
       spent_on: date,
-    });
+    };
+    const { error } = isEditing
+      ? await supabase.from('expenses').update(fields).eq('id', expenseId)
+      : await supabase.from('expenses').insert({ ...fields, family_id: familyId, user_id: user.id });
     setBusy(false);
 
     if (error) {
@@ -92,6 +139,28 @@ export default function AddExpenseScreen({ navigation }: Props) {
       return;
     }
     navigation.goBack();
+  }
+
+  function handleDelete() {
+    confirmDelete(async () => {
+      if (!expenseId) return;
+      setBusy(true);
+      const { error } = await supabase.from('expenses').delete().eq('id', expenseId);
+      setBusy(false);
+      if (error) {
+        Alert.alert('Could not delete', error.message);
+        return;
+      }
+      navigation.goBack();
+    });
+  }
+
+  if (loadingExpense) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
   }
 
   return (
@@ -112,7 +181,7 @@ export default function AddExpenseScreen({ navigation }: Props) {
             value={amount}
             onChangeText={setAmount}
             editable={!busy}
-            autoFocus
+            autoFocus={!isEditing}
           />
         </View>
 
@@ -123,7 +192,7 @@ export default function AddExpenseScreen({ navigation }: Props) {
         </Text>
         <FlatList
           ref={listRef}
-          data={CATEGORIES}
+          data={CATEGORIES as unknown as string[]}
           keyExtractor={(c) => c}
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -146,9 +215,7 @@ export default function AddExpenseScreen({ navigation }: Props) {
                 activeOpacity={0.8}
               >
                 <Text style={styles.catEmoji}>{CATEGORY_EMOJI[item]}</Text>
-                <Text style={[styles.catName, active && styles.catNameActive]}>
-                  {item}
-                </Text>
+                <Text style={[styles.catName, active && styles.catNameActive]}>{item}</Text>
               </TouchableOpacity>
             );
           }}
@@ -185,9 +252,17 @@ export default function AddExpenseScreen({ navigation }: Props) {
           {busy ? (
             <ActivityIndicator color={colors.primaryText} />
           ) : (
-            <Text style={styles.buttonText}>Save expense</Text>
+            <Text style={styles.buttonText}>
+              {isEditing ? 'Save changes' : 'Save expense'}
+            </Text>
           )}
         </TouchableOpacity>
+
+        {isEditing && (
+          <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} disabled={busy}>
+            <Text style={styles.deleteText}>Delete expense</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
       {/* Calendar popup */}
@@ -227,6 +302,7 @@ export default function AddExpenseScreen({ navigation }: Props) {
 const makeStyles = (c: Colors) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: c.bg },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: c.bg },
     scroll: { padding: 24 },
     label: {
       fontSize: 14,
@@ -263,7 +339,6 @@ const makeStyles = (c: Colors) =>
     catItem: {
       width: ITEM_WIDTH,
       paddingVertical: 16,
-      marginHorizontal: 0,
       borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
@@ -308,6 +383,8 @@ const makeStyles = (c: Colors) =>
     },
     buttonDisabled: { opacity: 0.6 },
     buttonText: { color: c.primaryText, fontSize: 16, fontWeight: '700' },
+    deleteBtn: { marginTop: 16, paddingVertical: 14, alignItems: 'center' },
+    deleteText: { color: c.danger, fontSize: 15, fontWeight: '700' },
     modalBackdrop: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.5)',
