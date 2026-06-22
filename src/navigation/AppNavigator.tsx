@@ -12,11 +12,13 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { useAuth } from '../lib/AuthContext';
+import { RootStackParamList } from './types';
 import LoginScreen from '../screens/LoginScreen';
 import FamilySetupScreen from '../screens/FamilySetupScreen';
 import HomeScreen from '../screens/HomeScreen';
+import AddExpenseScreen from '../screens/AddExpenseScreen';
 
-const Stack = createNativeStackNavigator();
+const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function AppNavigator() {
   const { session, familyId, loading } = useAuth();
@@ -38,7 +40,18 @@ export default function AppNavigator() {
         ) : !familyId ? (
           <Stack.Screen name="FamilySetup" component={FamilySetupScreen} />
         ) : (
-          <Stack.Screen name="Home" component={HomeScreen} />
+          <>
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen
+              name="AddExpense"
+              component={AddExpenseScreen}
+              options={{
+                headerShown: true,
+                title: 'Add expense',
+                presentation: 'modal',
+              }}
+            />
+          </>
         )}
       </Stack.Navigator>
     </NavigationContainer>
