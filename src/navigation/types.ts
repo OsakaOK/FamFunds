@@ -15,4 +15,5 @@ export type RootStackParamList = {
   AddExpense: { expenseId?: string } | undefined;
   Settings: undefined;
   Spaces: undefined;
+  Recurring: undefined;
 };

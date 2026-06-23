@@ -36,6 +36,7 @@ type Expense = {
   category: string;
   note: string | null;
   spent_on: string;
+  recurring_id: string | null;
 };
 
 type Group = { category: string; total: number; items: Expense[] };
@@ -48,19 +49,34 @@ export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
   const { userId, currentSpaceId, isAdmin } = useAuth();
   const { colors } = useTheme();
-  const { range } = useMonth();
+  const { range, label } = useMonth();
   const tabBarHeight = useBottomTabBarHeight();
   const styles = makeStyles(colors);
 
   const [groups, setGroups] = useState<Group[]>([]);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [totalBudget, setTotalBudget] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!currentSpaceId) return;
+
+    // Make sure recurring charges + the overall budget exist for this month.
+    await supabase.rpc('ensure_budget_month', { space: currentSpaceId, m: range.start });
+    await supabase.rpc('ensure_recurring', { space: currentSpaceId, m: range.start });
+
+    // The overall monthly budget — the headline "are we okay?" number.
+    const { data: tb } = await supabase
+      .from('space_budgets')
+      .select('total_limit')
+      .eq('space_id', currentSpaceId)
+      .eq('month', range.start)
+      .maybeSingle();
+    setTotalBudget(tb ? Number(tb.total_limit) : null);
+
     const { data, error } = await supabase
       .from('expenses')
-      .select('id, user_id, logger_name, amount, category, note, spent_on')
+      .select('id, user_id, logger_name, amount, category, note, spent_on, recurring_id')
       .eq('space_id', currentSpaceId)
       .gte('spent_on', range.start)
       .lt('spent_on', range.endExclusive)
@@ -92,6 +108,14 @@ export default function HomeScreen() {
   const monthTotal = groups.reduce((sum, g) => sum + g.total, 0);
   const count = groups.reduce((n, g) => n + g.items.length, 0);
 
+  // Budget-health "coach" numbers for the headline card.
+  const hasBudget = totalBudget !== null && totalBudget > 0;
+  const ratio = hasBudget ? monthTotal / (totalBudget as number) : 0;
+  const pct = Math.min(ratio, 1) * 100;
+  const over = hasBudget && monthTotal > (totalBudget as number);
+  const remaining = hasBudget ? (totalBudget as number) - monthTotal : 0;
+  const barColor = ratio >= 1 ? colors.danger : ratio >= 0.8 ? colors.warning : colors.success;
+
   function whoLabel(e: Expense) {
     if (e.user_id === userId) return 'You';
     return e.logger_name || 'Former member';
@@ -110,13 +134,58 @@ export default function HomeScreen() {
             <RefreshControl refreshing={false} onRefresh={load} tintColor={colors.primary} />
           }
         >
-          {/* Total summary */}
-          <View style={styles.summary}>
-            <Text style={styles.summaryLabel}>Total spent</Text>
-            <Text style={styles.summaryTotal}>{money(monthTotal)}</Text>
-            <Text style={styles.summarySub}>
-              {count} {count === 1 ? 'expense' : 'expenses'}
-            </Text>
+          {/* Budget-health headline — the "are we okay this month?" answer. */}
+          <View style={styles.coach}>
+            {hasBudget ? (
+              <>
+                <View style={styles.coachTop}>
+                  <Text style={styles.coachLabel}>{label} budget</Text>
+                  <Text style={[styles.coachPct, { color: barColor }]}>
+                    {Math.round(ratio * 100)}%
+                  </Text>
+                </View>
+                <Text style={styles.coachAmount}>
+                  {money(monthTotal)}{' '}
+                  <Text style={styles.coachOf}>of {money(totalBudget as number)}</Text>
+                </Text>
+                <View style={styles.track}>
+                  <View style={[styles.fill, { width: `${pct}%`, backgroundColor: barColor }]} />
+                </View>
+                <Text style={[styles.coachFoot, { color: over ? colors.danger : colors.subtext }]}>
+                  {over
+                    ? `Over budget by ${money(monthTotal - (totalBudget as number))}`
+                    : `${money(remaining)} left this month`}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.coachLabel}>Total spent · {label}</Text>
+                <Text style={styles.coachAmount}>{money(monthTotal)}</Text>
+                <Text style={styles.coachSub}>
+                  {count} {count === 1 ? 'expense' : 'expenses'}
+                </Text>
+                {isAdmin ? (
+                  <TouchableOpacity
+                    style={styles.coachCta}
+                    activeOpacity={0.7}
+                    onPress={() => navigation.navigate('Budgets' as never)}
+                  >
+                    <Ionicons name="flag-outline" size={15} color={colors.primary} />
+                    <Text style={styles.coachCtaText}>
+                      Set a monthly budget to see if you're on track
+                    </Text>
+                    <Ionicons name="chevron-forward" size={15} color={colors.primary} />
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.coachCta}>
+                    <Ionicons name="information-circle-outline" size={15} color={colors.subtext} />
+                    <Text style={[styles.coachCtaText, { color: colors.subtext }]}>
+                      No monthly budget set yet
+                    </Text>
+                  </View>
+                )}
+              </>
+            )}
           </View>
 
           {groups.length === 0 ? (
@@ -160,6 +229,12 @@ export default function HomeScreen() {
                               <Text style={styles.rowWho}>{whoLabel(item)}</Text>
                               {editable && (
                                 <Ionicons name="pencil" size={11} color={colors.tabInactive} />
+                              )}
+                              {item.recurring_id && (
+                                <View style={styles.recurringTag}>
+                                  <Ionicons name="repeat" size={10} color={colors.primary} />
+                                  <Text style={styles.recurringTagText}>Recurring</Text>
+                                </View>
                               )}
                             </View>
                             <Text style={styles.rowMeta}>
@@ -209,23 +284,38 @@ const makeStyles = (c: Colors) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: c.bg },
     list: { padding: 16 },
-    summary: {
+    coach: {
       backgroundColor: c.card,
       borderRadius: 16,
-      paddingVertical: 22,
-      alignItems: 'center',
+      padding: 20,
       marginBottom: 16,
       ...cardShadow,
     },
-    summaryLabel: { fontSize: 13, color: c.subtext, fontWeight: '600' },
-    summaryTotal: {
-      fontSize: 40,
+    coachTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    coachLabel: { fontSize: 13, color: c.subtext, fontWeight: '700' },
+    coachPct: { fontSize: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
+    coachAmount: {
+      fontSize: 34,
       fontWeight: '800',
       color: c.text,
-      marginTop: 4,
+      marginTop: 6,
       fontVariant: ['tabular-nums'],
     },
-    summarySub: { fontSize: 13, color: c.subtext, marginTop: 2 },
+    coachOf: { fontSize: 17, fontWeight: '600', color: c.subtext },
+    track: { height: 10, borderRadius: 5, backgroundColor: c.track, overflow: 'hidden', marginTop: 14 },
+    fill: { height: '100%', borderRadius: 5 },
+    coachFoot: { fontSize: 13, fontWeight: '700', marginTop: 10, fontVariant: ['tabular-nums'] },
+    coachSub: { fontSize: 13, color: c.subtext, marginTop: 2 },
+    coachCta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 14,
+      paddingTop: 14,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.border,
+    },
+    coachCtaText: { flex: 1, fontSize: 13, fontWeight: '600', color: c.primary },
     group: { backgroundColor: c.card, borderRadius: 14, marginBottom: 12, overflow: 'hidden', ...cardShadow },
     groupHeader: {
       flexDirection: 'row',
@@ -247,6 +337,16 @@ const makeStyles = (c: Colors) =>
     rowMiddle: { flex: 1 },
     rowWhoLine: { flexDirection: 'row', alignItems: 'center', gap: 5 },
     rowWho: { fontSize: 15, fontWeight: '600', color: c.text },
+    recurringTag: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      backgroundColor: c.accentBg,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 6,
+    },
+    recurringTagText: { fontSize: 10, fontWeight: '700', color: c.primary },
     rowMeta: { fontSize: 13, color: c.subtext, marginTop: 2 },
     rowAmount: { fontSize: 16, fontWeight: '700', color: c.text, fontVariant: ['tabular-nums'] },
     empty: { alignItems: 'center', marginTop: 60, paddingHorizontal: 24, gap: 8 },

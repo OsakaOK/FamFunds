@@ -24,6 +24,7 @@ import MainTabs from './MainTabs';
 import AddExpenseScreen from '../screens/AddExpenseScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SpacesScreen from '../screens/SpacesScreen';
+import RecurringScreen from '../screens/RecurringScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -83,6 +84,11 @@ export default function AppNavigator() {
               name="Spaces"
               component={SpacesScreen}
               options={{ ...headerOptions, title: 'Spaces' }}
+            />
+            <Stack.Screen
+              name="Recurring"
+              component={RecurringScreen}
+              options={{ ...headerOptions, title: 'Recurring charges' }}
             />
           </>
         )}

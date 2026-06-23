@@ -19,7 +19,10 @@ drop trigger if exists on_auth_user_created on auth.users;
 
 -- tables (CASCADE also removes their policies + indexes)
 drop table if exists public.budget_months cascade;
+drop table if exists public.space_budgets cascade;
 drop table if exists public.budgets cascade;
+drop table if exists public.recurring_runs cascade;
+drop table if exists public.recurring_expenses cascade;
 drop table if exists public.expenses cascade;
 drop table if exists public.space_members cascade;
 drop table if exists public.spaces cascade;
@@ -38,6 +41,7 @@ drop function if exists public.leave_space(uuid) cascade;
 drop function if exists public.promote_member(uuid, uuid) cascade;
 drop function if exists public.remove_member(uuid, uuid) cascade;
 drop function if exists public.ensure_budget_month(uuid, date) cascade;
+drop function if exists public.ensure_recurring(uuid, date) cascade;
 drop function if exists public.is_member_of(uuid) cascade;
 drop function if exists public.is_admin_of(uuid) cascade;
 drop function if exists public.shares_family_with(uuid) cascade;
@@ -76,20 +80,37 @@ create table public.space_members (
   unique (space_id, user_id)
 );
 
--- An expense. category is constrained to the global list. logger_name is a
--- snapshot of the logger's display name, so attribution survives them leaving.
-create table public.expenses (
+-- A recurring charge TEMPLATE (rent, subscriptions, phone bill). Each active one
+-- auto-materialises into a real expense once per month (see ensure_recurring).
+create table public.recurring_expenses (
   id          uuid primary key default gen_random_uuid(),
   space_id    uuid not null references public.spaces (id) on delete cascade,
   user_id     uuid not null references auth.users (id),
   logger_name text,
-  amount      numeric(12, 2) not null check (amount >= 0),
+  amount      numeric(12, 2) not null check (amount > 0),
   category    text not null check (category in
                 ('Groceries', 'Dining', 'Health', 'Entertainment', 'Shopping', 'Other')),
   note        text,
-  spent_on    date not null default current_date,
-  receipt_url text,
+  active      boolean not null default true,
   created_at  timestamptz not null default now()
+);
+
+-- An expense. category is constrained to the global list. logger_name is a
+-- snapshot of the logger's display name, so attribution survives them leaving.
+-- recurring_id links the rows auto-generated from a recurring template.
+create table public.expenses (
+  id           uuid primary key default gen_random_uuid(),
+  space_id     uuid not null references public.spaces (id) on delete cascade,
+  user_id      uuid not null references auth.users (id),
+  logger_name  text,
+  amount       numeric(12, 2) not null check (amount >= 0),
+  category     text not null check (category in
+                 ('Groceries', 'Dining', 'Health', 'Entertainment', 'Shopping', 'Other')),
+  note         text,
+  spent_on     date not null default current_date,
+  receipt_url  text,
+  recurring_id uuid references public.recurring_expenses (id) on delete set null,
+  created_at   timestamptz not null default now()
 );
 
 -- Budgets are per calendar month: one limit per (space, category, month).
@@ -104,6 +125,18 @@ create table public.budgets (
   unique (space_id, category, month)
 );
 
+-- The space's single OVERALL monthly budget — the headline "are we okay?" number
+-- the Home screen measures total spend against. One row per (space, month).
+-- Per-category budgets above are the optional drill-down; this is the top-line cap.
+create table public.space_budgets (
+  id          uuid primary key default gen_random_uuid(),
+  space_id    uuid not null references public.spaces (id) on delete cascade,
+  month       date not null, -- first day of the month
+  total_limit numeric(12, 2) not null check (total_limit >= 0),
+  created_at  timestamptz not null default now(),
+  unique (space_id, month)
+);
+
 -- Marks a (space, month) whose budgets have been "established" — so we can tell
 -- a deliberately-emptied month from a never-touched one (no auto-refill).
 create table public.budget_months (
@@ -113,9 +146,19 @@ create table public.budget_months (
   primary key (space_id, month)
 );
 
+-- Marks a (recurring template, month) already generated — so a deleted recurring
+-- expense doesn't resurrect next time the month is opened (mirrors budget_months).
+create table public.recurring_runs (
+  recurring_id uuid not null references public.recurring_expenses (id) on delete cascade,
+  month        date not null,
+  created_at   timestamptz not null default now(),
+  primary key (recurring_id, month)
+);
+
 create index on public.space_members (user_id);
 create index on public.expenses (space_id, spent_on);
 create index on public.budgets (space_id, month);
+create index on public.recurring_expenses (space_id);
 
 -- ============================================================================
 -- SECURITY-DEFINER HELPERS (bypass RLS internally to avoid recursion)
@@ -149,7 +192,10 @@ alter table public.profiles      enable row level security;
 alter table public.spaces        enable row level security;
 alter table public.space_members enable row level security;
 alter table public.expenses      enable row level security;
+alter table public.recurring_expenses enable row level security;
+alter table public.recurring_runs     enable row level security;
 alter table public.budgets       enable row level security;
+alter table public.space_budgets enable row level security;
 alter table public.budget_months enable row level security;
 
 -- profiles: see your own + anyone you share a Space with; edit your own.
@@ -176,10 +222,29 @@ create policy "edit own or admin" on public.expenses for update
 create policy "delete own or admin" on public.expenses for delete
   using (public.is_member_of(space_id) and (user_id = auth.uid() or public.is_admin_of(space_id)));
 
+-- recurring templates: members read; add your own; edit/delete own OR (admin) any.
+create policy "view space recurring" on public.recurring_expenses for select
+  using (public.is_member_of(space_id));
+create policy "add own recurring" on public.recurring_expenses for insert
+  with check (public.is_member_of(space_id) and user_id = auth.uid());
+create policy "edit own or admin recurring" on public.recurring_expenses for update
+  using (public.is_member_of(space_id) and (user_id = auth.uid() or public.is_admin_of(space_id)));
+create policy "delete own or admin recurring" on public.recurring_expenses for delete
+  using (public.is_member_of(space_id) and (user_id = auth.uid() or public.is_admin_of(space_id)));
+
+-- recurring_runs: bookkeeping only — written by the ensure_recurring RPC
+-- (security definer). No direct client access needed, so RLS denies all.
+
 -- budgets: members read; only admins manage.
 create policy "view space budgets" on public.budgets for select
   using (public.is_member_of(space_id));
 create policy "admins manage budgets" on public.budgets for all
+  using (public.is_admin_of(space_id)) with check (public.is_admin_of(space_id));
+
+-- space_budgets (overall monthly cap): members read; only admins manage.
+create policy "view space total budget" on public.space_budgets for select
+  using (public.is_member_of(space_id));
+create policy "admins manage total budget" on public.space_budgets for all
   using (public.is_admin_of(space_id)) with check (public.is_admin_of(space_id));
 
 -- budget_months: members read (writes happen via ensure_budget_month RPC).
@@ -317,7 +382,35 @@ begin
     insert into budgets (space_id, category, month, monthly_limit)
       select space, category, m, monthly_limit from budgets where space_id = space and month = prior
       on conflict (space_id, category, month) do nothing;
+    insert into space_budgets (space_id, month, total_limit)
+      select space, m, total_limit from space_budgets where space_id = space and month = prior
+      on conflict (space_id, month) do nothing;
   end if;
+end;
+$$;
+
+-- Materialise recurring templates into real expenses for month `m` — once each,
+-- ever (tracked in recurring_runs), only from the template's creation month
+-- onward and never into the future. Safe to call on every month view.
+create or replace function public.ensure_recurring(space uuid, m date)
+returns void language plpgsql security definer set search_path = public as $$
+declare t record;
+begin
+  if not public.is_member_of(space) then return; end if;
+  if m > date_trunc('month', current_date)::date then return; end if;
+
+  for t in
+    select * from recurring_expenses
+    where space_id = space and active
+      and date_trunc('month', created_at)::date <= m
+  loop
+    if exists (select 1 from recurring_runs where recurring_id = t.id and month = m) then
+      continue;
+    end if;
+    insert into expenses (space_id, user_id, logger_name, amount, category, note, spent_on, recurring_id)
+      values (space, t.user_id, t.logger_name, t.amount, t.category, t.note, m, t.id);
+    insert into recurring_runs (recurring_id, month) values (t.id, m) on conflict do nothing;
+  end loop;
 end;
 $$;
 
@@ -328,6 +421,7 @@ grant execute on function public.leave_space(uuid)             to authenticated;
 grant execute on function public.promote_member(uuid, uuid)    to authenticated;
 grant execute on function public.remove_member(uuid, uuid)     to authenticated;
 grant execute on function public.ensure_budget_month(uuid, date) to authenticated;
+grant execute on function public.ensure_recurring(uuid, date)    to authenticated;
 
 -- ============================================================================
 -- BACKFILL: give every existing user a profile + a Personal Space.
