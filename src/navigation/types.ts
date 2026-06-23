@@ -3,7 +3,6 @@
 
 export type RootStackParamList = {
   Login: undefined;
-  FamilySetup: undefined;
   Home: undefined;
   // When expenseId is present, Add Expense opens in "edit" mode for that row.
   AddExpense: { expenseId?: string } | undefined;
@@ -11,4 +10,5 @@ export type RootStackParamList = {
   Members: undefined;
   Charts: undefined;
   Settings: undefined;
+  Spaces: undefined;
 };

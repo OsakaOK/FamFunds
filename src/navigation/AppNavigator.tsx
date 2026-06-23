@@ -20,18 +20,18 @@ import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext';
 import { RootStackParamList } from './types';
 import LoginScreen from '../screens/LoginScreen';
-import FamilySetupScreen from '../screens/FamilySetupScreen';
 import HomeScreen from '../screens/HomeScreen';
 import AddExpenseScreen from '../screens/AddExpenseScreen';
 import BudgetsScreen from '../screens/BudgetsScreen';
 import MembersScreen from '../screens/MembersScreen';
 import ChartsScreen from '../screens/ChartsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import SpacesScreen from '../screens/SpacesScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function AppNavigator() {
-  const { session, familyId, loading } = useAuth();
+  const { session, loading } = useAuth();
   const { mode, colors } = useTheme();
 
   // Theme the React Navigation chrome (headers, backgrounds).
@@ -69,8 +69,6 @@ export default function AppNavigator() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!session ? (
           <Stack.Screen name="Login" component={LoginScreen} />
-        ) : !familyId ? (
-          <Stack.Screen name="FamilySetup" component={FamilySetupScreen} />
         ) : (
           <>
             <Stack.Screen name="Home" component={HomeScreen} />
@@ -98,6 +96,11 @@ export default function AppNavigator() {
               name="Settings"
               component={SettingsScreen}
               options={{ ...headerOptions, title: 'Settings' }}
+            />
+            <Stack.Screen
+              name="Spaces"
+              component={SpacesScreen}
+              options={{ ...headerOptions, title: 'Spaces' }}
             />
           </>
         )}

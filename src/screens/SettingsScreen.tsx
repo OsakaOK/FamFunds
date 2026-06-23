@@ -17,7 +17,7 @@ import { useTheme } from '../lib/ThemeContext';
 import { Colors } from '../lib/theme';
 
 export default function SettingsScreen() {
-  const { user, profileName, updateProfileName, signOut } = useAuth();
+  const { email, profileName, updateProfileName, signOut } = useAuth();
   const { mode, colors, toggle } = useTheme();
   const styles = makeStyles(colors);
 
@@ -46,7 +46,7 @@ export default function SettingsScreen() {
       <View style={styles.card}>
         <Text style={styles.help}>
           This is shown to your family instead of your email
-          {user?.email ? ` (${user.email})` : ''}.
+          {email ? ` (${email})` : ''}.
         </Text>
         <View style={styles.nameRow}>
           <TextInput

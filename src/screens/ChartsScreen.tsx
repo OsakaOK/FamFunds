@@ -35,7 +35,7 @@ function slicePath(cx: number, cy: number, r: number, startAngle: number, endAng
 type Slice = { category: string; total: number };
 
 export default function ChartsScreen() {
-  const { familyId } = useAuth();
+  const { currentSpaceId } = useAuth();
   const { colors } = useTheme();
   const { range } = useMonth();
   const styles = makeStyles(colors);
@@ -45,13 +45,13 @@ export default function ChartsScreen() {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    if (!familyId) return;
+    if (!currentSpaceId) return;
     setLoading(true);
 
     const { data } = await supabase
       .from('expenses')
       .select('category, amount')
-      .eq('family_id', familyId)
+      .eq('space_id', currentSpaceId)
       .gte('spent_on', range.start)
       .lt('spent_on', range.endExclusive);
 
@@ -70,7 +70,7 @@ export default function ChartsScreen() {
     setSlices(built);
     setTotal(sum);
     setLoading(false);
-  }, [familyId, range.start, range.endExclusive]);
+  }, [currentSpaceId, range.start, range.endExclusive]);
 
   useFocusEffect(
     useCallback(() => {

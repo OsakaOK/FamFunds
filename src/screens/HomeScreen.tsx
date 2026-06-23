@@ -1,6 +1,7 @@
-// HomeScreen — the SELECTED month's expenses, grouped by category with subtotals.
-// Tap a category header to collapse/expand. Tap one of YOUR OWN rows to edit it.
-// Month switcher + total live in the header; "+" adds a new expense.
+// HomeScreen — the current Space's expenses for the active month, grouped by
+// category with subtotals. Tap a category header to collapse/expand. Tap a row
+// you're allowed to edit (your own, or any if you're an admin) to edit it.
+// The header carries the Space switcher, month switcher, and total.
 
 import { useCallback, useState } from 'react';
 import {
@@ -30,6 +31,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 type Expense = {
   id: string;
   user_id: string;
+  logger_name: string | null;
   amount: number;
   category: string;
   note: string | null;
@@ -43,23 +45,22 @@ function money(n: number) {
 }
 
 export default function HomeScreen({ navigation }: Props) {
-  const { user, familyId } = useAuth();
+  const { userId, currentSpaceId, currentSpace, isAdmin } = useAuth();
   const { colors } = useTheme();
   const { range } = useMonth();
   const styles = makeStyles(colors);
 
   const [groups, setGroups] = useState<Group[]>([]);
-  const [names, setNames] = useState<Record<string, string>>({});
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    if (!familyId) return;
+    if (!currentSpaceId) return;
 
     const { data, error } = await supabase
       .from('expenses')
-      .select('id, user_id, amount, category, note, spent_on')
-      .eq('family_id', familyId)
+      .select('id, user_id, logger_name, amount, category, note, spent_on')
+      .eq('space_id', currentSpaceId)
       .gte('spent_on', range.start)
       .lt('spent_on', range.endExclusive)
       .order('spent_on', { ascending: false })
@@ -79,21 +80,8 @@ export default function HomeScreen({ navigation }: Props) {
       map[e.category].items.push(e);
     });
     setGroups(Object.values(map).sort((a, b) => b.total - a.total));
-
-    const ids = [...new Set(rows.map((e) => e.user_id))];
-    if (ids.length > 0) {
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, email, full_name')
-        .in('id', ids);
-      const nameMap: Record<string, string> = {};
-      (profiles ?? []).forEach((p) => {
-        nameMap[p.id] = p.full_name || p.email || 'Member';
-      });
-      setNames(nameMap);
-    }
     setLoading(false);
-  }, [familyId, range.start, range.endExclusive]);
+  }, [currentSpaceId, range.start, range.endExclusive]);
 
   useFocusEffect(
     useCallback(() => {
@@ -103,9 +91,13 @@ export default function HomeScreen({ navigation }: Props) {
 
   const monthTotal = groups.reduce((sum, g) => sum + g.total, 0);
 
-  function whoLabel(userId: string) {
-    if (userId === user?.id) return 'You';
-    return names[userId] ?? 'Member';
+  function whoLabel(e: Expense) {
+    if (e.user_id === userId) return 'You';
+    return e.logger_name || 'Former member';
+  }
+
+  function canEdit(e: Expense) {
+    return e.user_id === userId || isAdmin;
   }
 
   function toggle(category: string) {
@@ -130,6 +122,18 @@ export default function HomeScreen({ navigation }: Props) {
             <Text style={styles.navLink}>Settings</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Space switcher entry */}
+        <TouchableOpacity
+          style={styles.spaceChip}
+          onPress={() => navigation.navigate('Spaces')}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.spaceChipText}>
+            {currentSpace?.kind === 'personal' ? '🔒 ' : '👨‍👩‍👧 '}
+            {currentSpace?.name ?? 'Space'} ▾
+          </Text>
+        </TouchableOpacity>
 
         <View style={styles.monthRow}>
           <MonthSwitcher />
@@ -174,13 +178,13 @@ export default function HomeScreen({ navigation }: Props) {
 
                   {!isCollapsed &&
                     g.items.map((item) => {
-                      const mine = item.user_id === user?.id;
+                      const editable = canEdit(item);
                       const body = (
                         <>
                           <View style={styles.rowMiddle}>
                             <Text style={styles.rowWho}>
-                              {whoLabel(item.user_id)}
-                              {mine ? ' ✎' : ''}
+                              {whoLabel(item)}
+                              {editable ? ' ✎' : ''}
                             </Text>
                             <Text style={styles.rowMeta}>
                               {item.spent_on}
@@ -190,14 +194,12 @@ export default function HomeScreen({ navigation }: Props) {
                           <Text style={styles.rowAmount}>{money(Number(item.amount))}</Text>
                         </>
                       );
-                      return mine ? (
+                      return editable ? (
                         <TouchableOpacity
                           key={item.id}
                           style={styles.row}
                           activeOpacity={0.6}
-                          onPress={() =>
-                            navigation.navigate('AddExpense', { expenseId: item.id })
-                          }
+                          onPress={() => navigation.navigate('AddExpense', { expenseId: item.id })}
                         >
                           {body}
                         </TouchableOpacity>
@@ -242,7 +244,9 @@ const makeStyles = (c: Colors) =>
       gap: 16,
     },
     navLink: { color: c.primary, fontSize: 14, fontWeight: '700' },
-    monthRow: { marginTop: 14 },
+    spaceChip: { alignSelf: 'center', marginTop: 12, paddingVertical: 4 },
+    spaceChipText: { fontSize: 15, fontWeight: '700', color: c.text },
+    monthRow: { marginTop: 10 },
     headerTotal: { fontSize: 34, fontWeight: '800', color: c.text, textAlign: 'center', marginTop: 10 },
     headerCaption: { fontSize: 13, color: c.subtext, textAlign: 'center', marginTop: 2 },
     center: { flex: 1, alignItems: 'center', justifyContent: 'center' },

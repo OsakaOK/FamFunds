@@ -1,12 +1,16 @@
-// MembersScreen — each family member and how much they've spent this month.
-// Also shows the family invite code so you can add more people.
+// MembersScreen — the members of the current Space and their spend for the
+// active month. Admins can promote or remove other members. Personal Spaces
+// just show you.
 
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -22,33 +26,39 @@ function money(n: number) {
   return `$${n.toFixed(2)}`;
 }
 
+function confirmRemove(name: string, onYes: () => void) {
+  if (Platform.OS === 'web') {
+    if ((globalThis as any).confirm?.(`Remove ${name} from this space? Their expenses stay.`)) {
+      onYes();
+    }
+  } else {
+    Alert.alert('Remove member?', `Remove ${name}? Their expenses stay in the ledger.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: onYes },
+    ]);
+  }
+}
+
 type MemberRow = { userId: string; name: string; role: string; total: number };
 
 export default function MembersScreen() {
-  const { user, familyId } = useAuth();
+  const { userId, currentSpaceId, currentSpace, isAdmin, refreshSpaces } = useAuth();
   const { colors } = useTheme();
   const { range } = useMonth();
   const styles = makeStyles(colors);
 
   const [members, setMembers] = useState<MemberRow[]>([]);
-  const [inviteCode, setInviteCode] = useState('');
   const [familyTotal, setFamilyTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [actingOn, setActingOn] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!familyId) return;
-
-    const { data: family } = await supabase
-      .from('families')
-      .select('invite_code')
-      .eq('id', familyId)
-      .maybeSingle();
-    if (family) setInviteCode(family.invite_code);
+    if (!currentSpaceId) return;
 
     const { data: memberRows } = await supabase
-      .from('family_members')
+      .from('space_members')
       .select('user_id, role')
-      .eq('family_id', familyId);
+      .eq('space_id', currentSpaceId);
     const rows = memberRows ?? [];
 
     const ids = rows.map((m) => m.user_id);
@@ -64,7 +74,7 @@ export default function MembersScreen() {
     const { data: expenseRows } = await supabase
       .from('expenses')
       .select('user_id, amount')
-      .eq('family_id', familyId)
+      .eq('space_id', currentSpaceId)
       .gte('spent_on', range.start)
       .lt('spent_on', range.endExclusive);
     const spentMap: Record<string, number> = {};
@@ -76,23 +86,44 @@ export default function MembersScreen() {
     });
     setFamilyTotal(total);
 
-    const built: MemberRow[] = rows
-      .map((m) => ({
-        userId: m.user_id,
-        name: nameMap[m.user_id] ?? 'Member',
-        role: m.role,
-        total: spentMap[m.user_id] ?? 0,
-      }))
-      .sort((a, b) => b.total - a.total);
-    setMembers(built);
+    setMembers(
+      rows
+        .map((m) => ({
+          userId: m.user_id,
+          name: nameMap[m.user_id] ?? 'Member',
+          role: m.role,
+          total: spentMap[m.user_id] ?? 0,
+        }))
+        .sort((a, b) => b.total - a.total)
+    );
     setLoading(false);
-  }, [familyId, range.start, range.endExclusive]);
+  }, [currentSpaceId, range.start, range.endExclusive]);
 
   useFocusEffect(
     useCallback(() => {
       load();
     }, [load])
   );
+
+  async function promote(target: string) {
+    if (!currentSpaceId) return;
+    setActingOn(target);
+    const { error } = await supabase.rpc('promote_member', { space: currentSpaceId, target });
+    await Promise.all([load(), refreshSpaces(currentSpaceId)]);
+    setActingOn(null);
+    if (error) Alert.alert('Could not promote', error.message);
+  }
+
+  function remove(target: string, name: string) {
+    if (!currentSpaceId) return;
+    confirmRemove(name, async () => {
+      setActingOn(target);
+      const { error } = await supabase.rpc('remove_member', { space: currentSpaceId, target });
+      await load();
+      setActingOn(null);
+      if (error) Alert.alert('Could not remove', error.message);
+    });
+  }
 
   if (loading) {
     return (
@@ -102,22 +133,31 @@ export default function MembersScreen() {
     );
   }
 
+  const isFamily = currentSpace?.kind === 'family';
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.inviteCard}>
-        <Text style={styles.inviteLabel}>Invite code</Text>
-        <Text style={styles.inviteCode}>{inviteCode}</Text>
-        <Text style={styles.inviteHint}>
-          Share this so family members can join your group.
-        </Text>
-      </View>
+      {isFamily ? (
+        <View style={styles.inviteCard}>
+          <Text style={styles.inviteLabel}>Invite code</Text>
+          <Text style={styles.inviteCode}>{currentSpace?.inviteCode ?? '—'}</Text>
+          <Text style={styles.inviteHint}>Manage the code in Spaces.</Text>
+        </View>
+      ) : (
+        <View style={styles.inviteCard}>
+          <Text style={styles.inviteHint}>
+            This is your private Personal Space — only you can see it.
+          </Text>
+        </View>
+      )}
 
       <MonthSwitcher />
       <Text style={styles.sectionTitle}>Spending breakdown</Text>
 
       {members.map((m) => {
         const share = familyTotal > 0 ? m.total / familyTotal : 0;
-        const isMe = m.userId === user?.id;
+        const isMe = m.userId === userId;
+        const canManage = isAdmin && isFamily && !isMe;
         return (
           <View key={m.userId} style={styles.card}>
             <View style={styles.cardHeader}>
@@ -130,9 +170,28 @@ export default function MembersScreen() {
             <View style={styles.track}>
               <View style={[styles.fill, { width: `${share * 100}%` }]} />
             </View>
-            <Text style={styles.shareText}>
-              {(share * 100).toFixed(0)}% of family spending
-            </Text>
+            <Text style={styles.shareText}>{(share * 100).toFixed(0)}% of spending</Text>
+
+            {canManage && (
+              <View style={styles.actions}>
+                {m.role !== 'admin' && (
+                  <TouchableOpacity
+                    style={styles.actionBtn}
+                    onPress={() => promote(m.userId)}
+                    disabled={actingOn === m.userId}
+                  >
+                    <Text style={styles.actionText}>Make admin</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  onPress={() => remove(m.userId, m.name)}
+                  disabled={actingOn === m.userId}
+                >
+                  <Text style={[styles.actionText, { color: colors.danger }]}>Remove</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         );
       })}
@@ -150,7 +209,7 @@ const makeStyles = (c: Colors) =>
       borderRadius: 12,
       padding: 16,
       alignItems: 'center',
-      marginBottom: 20,
+      marginBottom: 16,
     },
     inviteLabel: { fontSize: 13, color: c.subtext },
     inviteCode: {
@@ -165,6 +224,7 @@ const makeStyles = (c: Colors) =>
       fontSize: 14,
       fontWeight: '700',
       color: c.text,
+      marginTop: 16,
       marginBottom: 12,
       paddingHorizontal: 4,
     },
@@ -180,4 +240,13 @@ const makeStyles = (c: Colors) =>
     track: { height: 10, borderRadius: 5, backgroundColor: c.track, overflow: 'hidden' },
     fill: { height: '100%', borderRadius: 5, backgroundColor: c.primary },
     shareText: { fontSize: 13, color: c.subtext, marginTop: 6 },
+    actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+    actionBtn: {
+      borderWidth: 1,
+      borderColor: c.border,
+      borderRadius: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+    },
+    actionText: { fontSize: 13, fontWeight: '700', color: c.primary },
   });

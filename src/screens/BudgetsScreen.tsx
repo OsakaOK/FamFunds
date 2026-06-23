@@ -34,7 +34,7 @@ function barColor(ratio: number) {
 }
 
 export default function BudgetsScreen() {
-  const { familyId } = useAuth();
+  const { currentSpaceId, isAdmin } = useAuth();
   const { colors } = useTheme();
   const { range } = useMonth();
   const styles = makeStyles(colors);
@@ -46,12 +46,16 @@ export default function BudgetsScreen() {
   const [savingCat, setSavingCat] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!familyId) return;
+    if (!currentSpaceId) return;
+
+    // First touch of a month carries budgets forward from the nearest prior month.
+    await supabase.rpc('ensure_budget_month', { space: currentSpaceId, m: range.start });
 
     const { data: budgetRows } = await supabase
       .from('budgets')
       .select('category, monthly_limit')
-      .eq('family_id', familyId);
+      .eq('space_id', currentSpaceId)
+      .eq('month', range.start);
 
     const limitMap: Record<string, number> = {};
     const draftMap: Record<string, string> = {};
@@ -65,7 +69,7 @@ export default function BudgetsScreen() {
     const { data: expenseRows } = await supabase
       .from('expenses')
       .select('category, amount')
-      .eq('family_id', familyId)
+      .eq('space_id', currentSpaceId)
       .gte('spent_on', range.start)
       .lt('spent_on', range.endExclusive);
 
@@ -75,7 +79,7 @@ export default function BudgetsScreen() {
     });
     setSpent(spentMap);
     setLoading(false);
-  }, [familyId, range.start, range.endExclusive]);
+  }, [currentSpaceId, range.start, range.endExclusive]);
 
   useFocusEffect(
     useCallback(() => {
@@ -89,14 +93,14 @@ export default function BudgetsScreen() {
       Alert.alert('Check the amount', 'Enter a number of 0 or more.');
       return;
     }
-    if (!familyId) return;
+    if (!currentSpaceId) return;
 
     setSavingCat(category);
     const { error } = await supabase
       .from('budgets')
       .upsert(
-        { family_id: familyId, category, monthly_limit: value },
-        { onConflict: 'family_id,category' }
+        { space_id: currentSpaceId, category, month: range.start, monthly_limit: value },
+        { onConflict: 'space_id,category,month' }
       );
     setSavingCat(null);
     if (error) {
@@ -120,6 +124,7 @@ export default function BudgetsScreen() {
       <Text style={styles.intro}>
         Limits are monthly. Bars show the selected month's spend — amber at 80%,
         red when you go over.
+        {!isAdmin ? ' Only an admin can change budgets.' : ''}
       </Text>
 
       {CATEGORIES.map((category) => {
@@ -145,28 +150,30 @@ export default function BudgetsScreen() {
               />
             </View>
 
-            <View style={styles.editRow}>
-              <Text style={styles.dollar}>$</Text>
-              <TextInput
-                style={styles.limitInput}
-                placeholder="Set limit"
-                placeholderTextColor={colors.subtext}
-                keyboardType="decimal-pad"
-                value={drafts[category] ?? ''}
-                onChangeText={(t) => setDrafts((prev) => ({ ...prev, [category]: t }))}
-              />
-              <TouchableOpacity
-                style={styles.saveBtn}
-                onPress={() => saveLimit(category)}
-                disabled={savingCat === category}
-              >
-                {savingCat === category ? (
-                  <ActivityIndicator color={colors.primaryText} size="small" />
-                ) : (
-                  <Text style={styles.saveBtnText}>Save</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+            {isAdmin && (
+              <View style={styles.editRow}>
+                <Text style={styles.dollar}>$</Text>
+                <TextInput
+                  style={styles.limitInput}
+                  placeholder="Set limit"
+                  placeholderTextColor={colors.subtext}
+                  keyboardType="decimal-pad"
+                  value={drafts[category] ?? ''}
+                  onChangeText={(t) => setDrafts((prev) => ({ ...prev, [category]: t }))}
+                />
+                <TouchableOpacity
+                  style={styles.saveBtn}
+                  onPress={() => saveLimit(category)}
+                  disabled={savingCat === category}
+                >
+                  {savingCat === category ? (
+                    <ActivityIndicator color={colors.primaryText} size="small" />
+                  ) : (
+                    <Text style={styles.saveBtnText}>Save</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         );
       })}

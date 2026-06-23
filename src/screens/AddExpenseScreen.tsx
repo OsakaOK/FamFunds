@@ -54,7 +54,7 @@ function confirmDelete(onYes: () => void) {
 }
 
 export default function AddExpenseScreen({ navigation, route }: Props) {
-  const { user, familyId } = useAuth();
+  const { userId, currentSpaceId, displayName } = useAuth();
   const { colors } = useTheme();
   const styles = makeStyles(colors);
 
@@ -120,7 +120,7 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
       Alert.alert('Check the amount', 'Enter an amount greater than 0.');
       return;
     }
-    if (!user || !familyId) return;
+    if (!userId || !currentSpaceId) return;
 
     setBusy(true);
     const fields = {
@@ -131,7 +131,12 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
     };
     const { error } = isEditing
       ? await supabase.from('expenses').update(fields).eq('id', expenseId)
-      : await supabase.from('expenses').insert({ ...fields, family_id: familyId, user_id: user.id });
+      : await supabase.from('expenses').insert({
+          ...fields,
+          space_id: currentSpaceId,
+          user_id: userId,
+          logger_name: displayName, // snapshot so attribution survives leaving
+        });
     setBusy(false);
 
     if (error) {
