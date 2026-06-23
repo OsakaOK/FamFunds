@@ -1,10 +1,8 @@
-// MembersScreen — the members of the current Space and their spend for the
-// active month. Admins can promote or remove other members. Personal Spaces
-// just show you.
+// MembersScreen — members of the current Space and their spend for the active
+// month. Admins can promote or remove others. Personal Spaces just show you.
 
 import { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Platform,
   ScrollView,
@@ -14,13 +12,15 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext';
 import { useMonth } from '../lib/MonthContext';
-import { Colors } from '../lib/theme';
+import { useToast } from '../lib/ToastContext';
+import { Colors, cardShadow } from '../lib/theme';
 import { supabase } from '../lib/supabase';
-import MonthSwitcher from '../components/MonthSwitcher';
+import { ListSkeleton } from '../components/Skeleton';
 
 function money(n: number) {
   return `$${n.toFixed(2)}`;
@@ -45,6 +45,7 @@ export default function MembersScreen() {
   const { userId, currentSpaceId, currentSpace, isAdmin, refreshSpaces } = useAuth();
   const { colors } = useTheme();
   const { range } = useMonth();
+  const { showToast } = useToast();
   const styles = makeStyles(colors);
 
   const [members, setMembers] = useState<MemberRow[]>([]);
@@ -105,13 +106,13 @@ export default function MembersScreen() {
     }, [load])
   );
 
-  async function promote(target: string) {
+  async function promote(target: string, name: string) {
     if (!currentSpaceId) return;
     setActingOn(target);
     const { error } = await supabase.rpc('promote_member', { space: currentSpaceId, target });
     await Promise.all([load(), refreshSpaces(currentSpaceId)]);
     setActingOn(null);
-    if (error) Alert.alert('Could not promote', error.message);
+    showToast(error ? error.message : `${name} is now an admin`, error ? 'error' : 'success');
   }
 
   function remove(target: string, name: string) {
@@ -121,17 +122,11 @@ export default function MembersScreen() {
       const { error } = await supabase.rpc('remove_member', { space: currentSpaceId, target });
       await load();
       setActingOn(null);
-      if (error) Alert.alert('Could not remove', error.message);
+      showToast(error ? error.message : `${name} removed`, error ? 'error' : 'success');
     });
   }
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
+  if (loading) return <ListSkeleton rows={4} />;
 
   const isFamily = currentSpace?.kind === 'family';
 
@@ -141,17 +136,20 @@ export default function MembersScreen() {
         <View style={styles.inviteCard}>
           <Text style={styles.inviteLabel}>Invite code</Text>
           <Text style={styles.inviteCode}>{currentSpace?.inviteCode ?? '—'}</Text>
-          <Text style={styles.inviteHint}>Manage the code in Spaces.</Text>
+          <View style={styles.inviteHintRow}>
+            <Ionicons name="settings-outline" size={13} color={colors.subtext} />
+            <Text style={styles.inviteHint}>Manage the code in Spaces</Text>
+          </View>
         </View>
       ) : (
         <View style={styles.inviteCard}>
-          <Text style={styles.inviteHint}>
+          <Ionicons name="lock-closed" size={20} color={colors.primary} />
+          <Text style={[styles.inviteHint, { marginTop: 6 }]}>
             This is your private Personal Space — only you can see it.
           </Text>
         </View>
       )}
 
-      <MonthSwitcher />
       <Text style={styles.sectionTitle}>Spending breakdown</Text>
 
       {members.map((m) => {
@@ -161,10 +159,14 @@ export default function MembersScreen() {
         return (
           <View key={m.userId} style={styles.card}>
             <View style={styles.cardHeader}>
-              <Text style={styles.name}>
-                {isMe ? 'You' : m.name}
-                {m.role === 'admin' ? '  👑' : ''}
-              </Text>
+              <View style={styles.nameRow}>
+                <Text style={styles.name}>{isMe ? 'You' : m.name}</Text>
+                {m.role === 'admin' && (
+                  <View style={styles.adminPill}>
+                    <Text style={styles.adminPillText}>Admin</Text>
+                  </View>
+                )}
+              </View>
               <Text style={styles.amount}>{money(m.total)}</Text>
             </View>
             <View style={styles.track}>
@@ -177,9 +179,10 @@ export default function MembersScreen() {
                 {m.role !== 'admin' && (
                   <TouchableOpacity
                     style={styles.actionBtn}
-                    onPress={() => promote(m.userId)}
+                    onPress={() => promote(m.userId, m.name)}
                     disabled={actingOn === m.userId}
                   >
+                    <Ionicons name="ribbon-outline" size={14} color={colors.primary} />
                     <Text style={styles.actionText}>Make admin</Text>
                   </TouchableOpacity>
                 )}
@@ -188,6 +191,7 @@ export default function MembersScreen() {
                   onPress={() => remove(m.userId, m.name)}
                   disabled={actingOn === m.userId}
                 >
+                  <Ionicons name="person-remove-outline" size={14} color={colors.danger} />
                   <Text style={[styles.actionText, { color: colors.danger }]}>Remove</Text>
                 </TouchableOpacity>
               </View>
@@ -203,11 +207,10 @@ const makeStyles = (c: Colors) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: c.bg },
     content: { padding: 16, paddingBottom: 40 },
-    center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: c.bg },
     inviteCard: {
       backgroundColor: c.accentBg,
-      borderRadius: 12,
-      padding: 16,
+      borderRadius: 14,
+      padding: 18,
       alignItems: 'center',
       marginBottom: 16,
     },
@@ -219,33 +222,39 @@ const makeStyles = (c: Colors) =>
       color: c.primary,
       marginVertical: 4,
     },
+    inviteHintRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
     inviteHint: { fontSize: 13, color: c.subtext, textAlign: 'center' },
     sectionTitle: {
       fontSize: 14,
       fontWeight: '700',
       color: c.text,
-      marginTop: 16,
       marginBottom: 12,
       paddingHorizontal: 4,
     },
-    card: { backgroundColor: c.card, borderRadius: 12, padding: 16, marginBottom: 12 },
+    card: { backgroundColor: c.card, borderRadius: 14, padding: 16, marginBottom: 12, ...cardShadow },
     cardHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
       marginBottom: 10,
     },
+    nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     name: { fontSize: 16, fontWeight: '700', color: c.text },
-    amount: { fontSize: 16, fontWeight: '800', color: c.text },
+    adminPill: { backgroundColor: c.accentBg, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
+    adminPillText: { fontSize: 11, fontWeight: '700', color: c.primary },
+    amount: { fontSize: 16, fontWeight: '800', color: c.text, fontVariant: ['tabular-nums'] },
     track: { height: 10, borderRadius: 5, backgroundColor: c.track, overflow: 'hidden' },
     fill: { height: '100%', borderRadius: 5, backgroundColor: c.primary },
     shareText: { fontSize: 13, color: c.subtext, marginTop: 6 },
     actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
     actionBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
       borderWidth: 1,
       borderColor: c.border,
       borderRadius: 8,
-      paddingHorizontal: 14,
+      paddingHorizontal: 12,
       paddingVertical: 8,
     },
     actionText: { fontSize: 13, fontWeight: '700', color: c.primary },

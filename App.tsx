@@ -6,6 +6,7 @@
 
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider } from './src/lib/ThemeContext';
+import { ToastProvider } from './src/lib/ToastContext';
 import { AuthProvider } from './src/lib/AuthContext';
 import { MonthProvider } from './src/lib/MonthContext';
 import WebFrame from './src/components/WebFrame';
@@ -15,13 +16,15 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <AuthProvider>
-          <MonthProvider>
-            <WebFrame>
-              <AppNavigator />
-            </WebFrame>
-          </MonthProvider>
-        </AuthProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <MonthProvider>
+              <WebFrame>
+                <AppNavigator />
+              </WebFrame>
+            </MonthProvider>
+          </AuthProvider>
+        </ToastProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

@@ -1,10 +1,8 @@
-// BudgetsScreen — set a monthly limit per category and see how much you've used.
-// The bar goes green -> amber -> red as you approach and exceed the limit.
+// BudgetsScreen — per-category monthly limits with progress bars. Admins set the
+// limits; everyone sees the bars. Auto-carries from the prior month on first touch.
 
 import { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,30 +11,26 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext';
 import { useMonth } from '../lib/MonthContext';
-import { Colors } from '../lib/theme';
+import { useToast } from '../lib/ToastContext';
+import { Colors, cardShadow } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 import { CATEGORIES, CATEGORY_EMOJI } from '../lib/categories';
-import MonthSwitcher from '../components/MonthSwitcher';
+import { ListSkeleton } from '../components/Skeleton';
 
 function money(n: number) {
   return `$${n.toFixed(2)}`;
-}
-
-// Bar colour from how much of the limit is used (these stay fixed in both themes).
-function barColor(ratio: number) {
-  if (ratio >= 1) return '#ef4444';
-  if (ratio >= 0.8) return '#f59e0b';
-  return '#22c55e';
 }
 
 export default function BudgetsScreen() {
   const { currentSpaceId, isAdmin } = useAuth();
   const { colors } = useTheme();
   const { range } = useMonth();
+  const { showToast } = useToast();
   const styles = makeStyles(colors);
 
   const [limits, setLimits] = useState<Record<string, number>>({});
@@ -45,10 +39,11 @@ export default function BudgetsScreen() {
   const [loading, setLoading] = useState(true);
   const [savingCat, setSavingCat] = useState<string | null>(null);
 
+  const barColor = (ratio: number) =>
+    ratio >= 1 ? colors.danger : ratio >= 0.8 ? colors.warning : colors.success;
+
   const load = useCallback(async () => {
     if (!currentSpaceId) return;
-
-    // First touch of a month carries budgets forward from the nearest prior month.
     await supabase.rpc('ensure_budget_month', { space: currentSpaceId, m: range.start });
 
     const { data: budgetRows } = await supabase
@@ -90,7 +85,7 @@ export default function BudgetsScreen() {
   async function saveLimit(category: string) {
     const value = Number(drafts[category]);
     if (drafts[category] === undefined || isNaN(value) || value < 0) {
-      Alert.alert('Check the amount', 'Enter a number of 0 or more.');
+      showToast('Enter a number of 0 or more', 'error');
       return;
     }
     if (!currentSpaceId) return;
@@ -104,34 +99,31 @@ export default function BudgetsScreen() {
       );
     setSavingCat(null);
     if (error) {
-      Alert.alert('Could not save', error.message);
+      showToast(error.message, 'error');
       return;
     }
     setLimits((prev) => ({ ...prev, [category]: value }));
+    showToast(`${category} budget updated`, 'success');
   }
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
+  if (loading) return <ListSkeleton rows={6} />;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <MonthSwitcher />
-      <Text style={styles.intro}>
-        Limits are monthly. Bars show the selected month's spend — amber at 80%,
-        red when you go over.
-        {!isAdmin ? ' Only an admin can change budgets.' : ''}
-      </Text>
+      <View style={styles.intro}>
+        <Ionicons name="information-circle-outline" size={16} color={colors.subtext} />
+        <Text style={styles.introText}>
+          Monthly limits. Bars go amber at 80%, red when over.
+          {!isAdmin ? ' Only an admin can change them.' : ''}
+        </Text>
+      </View>
 
       {CATEGORIES.map((category) => {
         const limit = limits[category] ?? 0;
         const used = spent[category] ?? 0;
         const ratio = limit > 0 ? used / limit : 0;
         const pct = Math.min(ratio, 1) * 100;
+        const over = limit > 0 && used > limit;
 
         return (
           <View key={category} style={styles.card}>
@@ -139,7 +131,7 @@ export default function BudgetsScreen() {
               <Text style={styles.category}>
                 {CATEGORY_EMOJI[category]} {category}
               </Text>
-              <Text style={styles.usage}>
+              <Text style={[styles.usage, over && { color: colors.danger }]}>
                 {limit > 0 ? `${money(used)} / ${money(limit)}` : `${money(used)} spent`}
               </Text>
             </View>
@@ -166,11 +158,9 @@ export default function BudgetsScreen() {
                   onPress={() => saveLimit(category)}
                   disabled={savingCat === category}
                 >
-                  {savingCat === category ? (
-                    <ActivityIndicator color={colors.primaryText} size="small" />
-                  ) : (
-                    <Text style={styles.saveBtnText}>Save</Text>
-                  )}
+                  <Text style={styles.saveBtnText}>
+                    {savingCat === category ? 'Saving…' : 'Save'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -185,9 +175,9 @@ const makeStyles = (c: Colors) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: c.bg },
     content: { padding: 16, paddingBottom: 40 },
-    center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: c.bg },
-    intro: { fontSize: 14, color: c.subtext, marginBottom: 16, paddingHorizontal: 4 },
-    card: { backgroundColor: c.card, borderRadius: 12, padding: 16, marginBottom: 12 },
+    intro: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14, paddingHorizontal: 4 },
+    introText: { flex: 1, fontSize: 13, color: c.subtext },
+    card: { backgroundColor: c.card, borderRadius: 14, padding: 16, marginBottom: 12, ...cardShadow },
     cardHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -195,7 +185,7 @@ const makeStyles = (c: Colors) =>
       marginBottom: 10,
     },
     category: { fontSize: 16, fontWeight: '700', color: c.text },
-    usage: { fontSize: 14, color: c.subtext },
+    usage: { fontSize: 14, color: c.subtext, fontVariant: ['tabular-nums'] },
     track: { height: 10, borderRadius: 5, backgroundColor: c.track, overflow: 'hidden' },
     fill: { height: '100%', borderRadius: 5 },
     editRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
@@ -206,10 +196,11 @@ const makeStyles = (c: Colors) =>
       borderColor: c.border,
       borderRadius: 8,
       paddingHorizontal: 12,
-      paddingVertical: 8,
+      paddingVertical: 9,
       fontSize: 15,
       color: c.text,
       backgroundColor: c.inputBg,
+      fontVariant: ['tabular-nums'],
     },
     saveBtn: {
       marginLeft: 10,
@@ -217,7 +208,7 @@ const makeStyles = (c: Colors) =>
       borderRadius: 8,
       paddingHorizontal: 18,
       paddingVertical: 10,
-      minWidth: 70,
+      minWidth: 76,
       alignItems: 'center',
     },
     saveBtnText: { color: c.primaryText, fontWeight: '700' },

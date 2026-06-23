@@ -4,16 +4,12 @@
 // for your OWN expenses (Home only makes your own rows tappable), and the
 // database rules enforce the same.
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
-  FlatList,
   KeyboardAvoidingView,
   Modal,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
   Platform,
   ScrollView,
   StyleSheet,
@@ -24,20 +20,18 @@ import {
 } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext';
+import { useToast } from '../lib/ToastContext';
 import { Colors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 import { todayLocal } from '../lib/dates';
-import { CATEGORIES, CATEGORY_EMOJI } from '../lib/categories';
+import { CATEGORIES, CATEGORY_EMOJI, Category } from '../lib/categories';
 import { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AddExpense'>;
-
-const ITEM_WIDTH = 120;
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const SIDE_PAD = Math.max((SCREEN_WIDTH - ITEM_WIDTH) / 2, 16);
 
 // Cross-platform confirm (react-native-web's Alert doesn't show buttons).
 function confirmDelete(onYes: () => void) {
@@ -56,21 +50,20 @@ function confirmDelete(onYes: () => void) {
 export default function AddExpenseScreen({ navigation, route }: Props) {
   const { userId, currentSpaceId, displayName } = useAuth();
   const { colors } = useTheme();
+  const { showToast } = useToast();
   const styles = makeStyles(colors);
 
   const expenseId = route.params?.expenseId;
   const isEditing = !!expenseId;
 
   const [amount, setAmount] = useState('');
-  const [categoryIndex, setCategoryIndex] = useState(0);
+  const [amountError, setAmountError] = useState<string | null>(null);
+  const [category, setCategory] = useState<Category>('Groceries');
   const [date, setDate] = useState(todayLocal());
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [loadingExpense, setLoadingExpense] = useState(isEditing);
   const [showCalendar, setShowCalendar] = useState(false);
-
-  const listRef = useRef<FlatList>(null);
-  const category = CATEGORIES[categoryIndex];
 
   // Title in the header reflects the mode.
   useLayoutEffect(() => {
@@ -90,41 +83,30 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
           setAmount(String(data.amount));
           setNote(data.note ?? '');
           setDate(data.spent_on);
-          const idx = CATEGORIES.indexOf(data.category);
-          const safeIdx = idx >= 0 ? idx : 0;
-          setCategoryIndex(safeIdx);
-          // Center the slider on the pre-filled category.
-          setTimeout(
-            () => listRef.current?.scrollToOffset({ offset: safeIdx * ITEM_WIDTH, animated: false }),
-            0
-          );
+          const valid = (CATEGORIES as readonly string[]).includes(data.category);
+          setCategory((valid ? data.category : 'Groceries') as Category);
         }
         setLoadingExpense(false);
       });
   }, [expenseId]);
 
-  function onSliderScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
-    const index = Math.round(e.nativeEvent.contentOffset.x / ITEM_WIDTH);
-    const clamped = Math.min(Math.max(index, 0), CATEGORIES.length - 1);
-    if (clamped !== categoryIndex) setCategoryIndex(clamped);
-  }
-
-  function selectCategory(index: number) {
-    setCategoryIndex(index);
-    listRef.current?.scrollToOffset({ offset: index * ITEM_WIDTH, animated: true });
+  function validateAmount() {
+    const n = Number(amount);
+    if (!amount || isNaN(n) || n <= 0) {
+      setAmountError('Enter an amount greater than 0');
+      return false;
+    }
+    setAmountError(null);
+    return true;
   }
 
   async function handleSave() {
-    const numericAmount = Number(amount);
-    if (!amount || isNaN(numericAmount) || numericAmount <= 0) {
-      Alert.alert('Check the amount', 'Enter an amount greater than 0.');
-      return;
-    }
+    if (!validateAmount()) return;
     if (!userId || !currentSpaceId) return;
 
     setBusy(true);
     const fields = {
-      amount: numericAmount,
+      amount: Number(amount),
       category,
       note: note.trim() || null,
       spent_on: date,
@@ -140,9 +122,10 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
     setBusy(false);
 
     if (error) {
-      Alert.alert('Could not save', error.message);
+      showToast(error.message, 'error');
       return;
     }
+    showToast(isEditing ? 'Expense updated' : 'Expense added', 'success');
     navigation.goBack();
   }
 
@@ -153,9 +136,10 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
       const { error } = await supabase.from('expenses').delete().eq('id', expenseId);
       setBusy(false);
       if (error) {
-        Alert.alert('Could not delete', error.message);
+        showToast(error.message, 'error');
         return;
       }
+      showToast('Expense deleted', 'success');
       navigation.goBack();
     });
   }
@@ -176,7 +160,7 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {/* Amount */}
         <Text style={styles.label}>Amount</Text>
-        <View style={styles.amountRow}>
+        <View style={[styles.amountRow, amountError ? { borderColor: colors.danger } : null]}>
           <Text style={styles.currency}>$</Text>
           <TextInput
             style={styles.amountInput}
@@ -184,47 +168,44 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
             placeholderTextColor={colors.subtext}
             keyboardType="decimal-pad"
             value={amount}
-            onChangeText={setAmount}
+            onChangeText={(t) => {
+              setAmount(t);
+              if (amountError) setAmountError(null);
+            }}
+            onBlur={validateAmount}
             editable={!busy}
             autoFocus={!isEditing}
           />
         </View>
+        {amountError ? <Text style={styles.errorText}>{amountError}</Text> : null}
 
-        {/* Category slider */}
-        <Text style={styles.label}>Category — swipe to choose</Text>
-        <Text style={styles.selectedCategory}>
-          {CATEGORY_EMOJI[category]} {category}
-        </Text>
-        <FlatList
-          ref={listRef}
-          data={CATEGORIES as unknown as string[]}
-          keyExtractor={(c) => c}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          snapToInterval={ITEM_WIDTH}
-          decelerationRate="fast"
-          scrollEventThrottle={16}
-          onScroll={onSliderScroll}
-          getItemLayout={(_, index) => ({
-            length: ITEM_WIDTH,
-            offset: ITEM_WIDTH * index,
-            index,
-          })}
-          contentContainerStyle={{ paddingHorizontal: SIDE_PAD }}
-          renderItem={({ item, index }) => {
-            const active = index === categoryIndex;
+        {/* Category grid */}
+        <Text style={styles.label}>Category</Text>
+        <View style={styles.grid}>
+          {CATEGORIES.map((c) => {
+            const active = c === category;
             return (
               <TouchableOpacity
-                style={[styles.catItem, active && styles.catItemActive]}
-                onPress={() => selectCategory(index)}
+                key={c}
+                style={[styles.catCard, active && styles.catCardActive]}
+                onPress={() => setCategory(c)}
                 activeOpacity={0.8}
+                disabled={busy}
               >
-                <Text style={styles.catEmoji}>{CATEGORY_EMOJI[item]}</Text>
-                <Text style={[styles.catName, active && styles.catNameActive]}>{item}</Text>
+                {active && (
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={16}
+                    color={colors.primary}
+                    style={styles.catCheck}
+                  />
+                )}
+                <Text style={styles.catEmoji}>{CATEGORY_EMOJI[c]}</Text>
+                <Text style={[styles.catName, active && styles.catNameActive]}>{c}</Text>
               </TouchableOpacity>
             );
-          }}
-        />
+          })}
+        </View>
 
         {/* Date */}
         <Text style={styles.label}>Date</Text>
@@ -234,7 +215,7 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
           disabled={busy}
         >
           <Text style={styles.dateText}>{date}</Text>
-          <Text style={styles.dateIcon}>📅</Text>
+          <Ionicons name="calendar-outline" size={18} color={colors.subtext} />
         </TouchableOpacity>
 
         {/* Note */}
@@ -265,6 +246,7 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
 
         {isEditing && (
           <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} disabled={busy}>
+            <Ionicons name="trash-outline" size={16} color={colors.danger} />
             <Text style={styles.deleteText}>Delete expense</Text>
           </TouchableOpacity>
         )}
@@ -333,27 +315,25 @@ const makeStyles = (c: Colors) =>
       color: c.text,
       paddingVertical: 12,
       marginLeft: 8,
+      fontVariant: ['tabular-nums'],
     },
-    selectedCategory: {
-      fontSize: 20,
-      fontWeight: '800',
-      color: c.text,
-      textAlign: 'center',
-      marginBottom: 12,
-    },
-    catItem: {
-      width: ITEM_WIDTH,
+    errorText: { color: c.danger, fontSize: 13, marginTop: 6, marginLeft: 4 },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    catCard: {
+      width: '47.5%',
+      flexGrow: 1,
       paddingVertical: 16,
       borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: c.card,
       borderWidth: 2,
-      borderColor: 'transparent',
+      borderColor: c.border,
     },
-    catItemActive: { borderColor: c.primary },
-    catEmoji: { fontSize: 30, marginBottom: 6 },
-    catName: { fontSize: 13, color: c.subtext, fontWeight: '600' },
+    catCardActive: { borderColor: c.primary, backgroundColor: c.accentBg },
+    catCheck: { position: 'absolute', top: 8, right: 8 },
+    catEmoji: { fontSize: 28, marginBottom: 6 },
+    catName: { fontSize: 14, color: c.subtext, fontWeight: '600' },
     catNameActive: { color: c.primary, fontWeight: '800' },
     dateField: {
       flexDirection: 'row',
@@ -388,7 +368,14 @@ const makeStyles = (c: Colors) =>
     },
     buttonDisabled: { opacity: 0.6 },
     buttonText: { color: c.primaryText, fontSize: 16, fontWeight: '700' },
-    deleteBtn: { marginTop: 16, paddingVertical: 14, alignItems: 'center' },
+    deleteBtn: {
+      marginTop: 16,
+      paddingVertical: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+    },
     deleteText: { color: c.danger, fontSize: 15, fontWeight: '700' },
     modalBackdrop: {
       flex: 1,

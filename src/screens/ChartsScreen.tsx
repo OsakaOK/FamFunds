@@ -4,17 +4,18 @@
 // The month switcher stays visible even when a month has no data.
 
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import Svg, { G, Path, Circle } from 'react-native-svg';
 
 import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext';
 import { useMonth } from '../lib/MonthContext';
-import { Colors } from '../lib/theme';
+import { Colors, cardShadow } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 import { CATEGORY_COLOR, CATEGORY_EMOJI } from '../lib/categories';
-import MonthSwitcher from '../components/MonthSwitcher';
+import { Skeleton } from '../components/Skeleton';
 
 function money(n: number) {
   return `$${n.toFixed(2)}`;
@@ -85,14 +86,21 @@ export default function ChartsScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <MonthSwitcher />
-
       {loading ? (
-        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 60 }} />
+        <View style={styles.skeletonWrap}>
+          <Skeleton width={210} height={210} radius={105} />
+          <View style={{ height: 26 }} />
+          <Skeleton width="100%" height={54} radius={12} />
+          <View style={{ height: 10 }} />
+          <Skeleton width="100%" height={54} radius={12} />
+          <View style={{ height: 10 }} />
+          <Skeleton width="100%" height={54} radius={12} />
+        </View>
       ) : total === 0 ? (
         <View style={styles.empty}>
+          <Ionicons name="pie-chart-outline" size={44} color={colors.tabInactive} />
           <Text style={styles.emptyTitle}>No spending this month</Text>
-          <Text style={styles.emptyText}>Add expenses, or step to another month above.</Text>
+          <Text style={styles.emptyText}>Add expenses, or step to another month up top.</Text>
         </View>
       ) : (
         <>
@@ -152,7 +160,9 @@ const makeStyles = (c: Colors) =>
       textAlign: 'center',
       marginTop: 16,
       marginBottom: 8,
+      fontVariant: ['tabular-nums'],
     },
+    skeletonWrap: { alignItems: 'center', paddingVertical: 20 },
     pieWrap: { alignItems: 'center', marginVertical: 16 },
     sectionTitle: {
       fontSize: 14,
@@ -162,7 +172,7 @@ const makeStyles = (c: Colors) =>
       marginBottom: 12,
       paddingHorizontal: 4,
     },
-    barRow: { backgroundColor: c.card, borderRadius: 12, padding: 14, marginBottom: 10 },
+    barRow: { backgroundColor: c.card, borderRadius: 12, padding: 14, marginBottom: 10, ...cardShadow },
     barHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -170,10 +180,10 @@ const makeStyles = (c: Colors) =>
       marginBottom: 8,
     },
     barLabel: { fontSize: 15, fontWeight: '700', color: c.text },
-    barAmount: { fontSize: 14, color: c.subtext },
+    barAmount: { fontSize: 14, color: c.subtext, fontVariant: ['tabular-nums'] },
     track: { height: 10, borderRadius: 5, backgroundColor: c.track, overflow: 'hidden' },
     fill: { height: '100%', borderRadius: 5 },
-    empty: { alignItems: 'center', marginTop: 70, paddingHorizontal: 24 },
+    empty: { alignItems: 'center', marginTop: 70, paddingHorizontal: 24, gap: 8 },
     emptyTitle: { fontSize: 18, fontWeight: '700', color: c.text },
     emptyText: { fontSize: 14, color: c.subtext, marginTop: 6, textAlign: 'center' },
   });

@@ -1,8 +1,8 @@
-// MonthSwitcher — the  ‹  June 2026  ›  control. Drop it at the top of any data
-// screen; it reads/writes the shared MonthContext, so every screen agrees on
-// which month is showing.
+// MonthSwitcher —  ‹  June 2026  ›  control. Reads/writes the shared MonthContext
+// so every screen agrees on the active month.
 
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useMonth } from '../lib/MonthContext';
 import { useTheme } from '../lib/ThemeContext';
 import { Colors } from '../lib/theme';
@@ -14,8 +14,13 @@ export default function MonthSwitcher() {
 
   return (
     <View style={styles.row}>
-      <TouchableOpacity style={styles.arrowBtn} onPress={prev} hitSlop={8}>
-        <Text style={styles.arrow}>‹</Text>
+      <TouchableOpacity
+        style={styles.arrowBtn}
+        onPress={prev}
+        hitSlop={8}
+        accessibilityLabel="Previous month"
+      >
+        <Ionicons name="chevron-back" size={18} color={colors.primary} />
       </TouchableOpacity>
 
       <Text style={styles.label}>{label}</Text>
@@ -25,8 +30,13 @@ export default function MonthSwitcher() {
         onPress={next}
         disabled={!canGoNext}
         hitSlop={8}
+        accessibilityLabel="Next month"
       >
-        <Text style={[styles.arrow, !canGoNext && styles.arrowDisabled]}>›</Text>
+        <Ionicons
+          name="chevron-forward"
+          size={18}
+          color={canGoNext ? colors.primary : colors.tabInactive}
+        />
       </TouchableOpacity>
     </View>
   );
@@ -34,21 +44,14 @@ export default function MonthSwitcher() {
 
 const makeStyles = (c: Colors) =>
   StyleSheet.create({
-    row: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 18,
-    },
+    row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 },
     arrowBtn: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
+      width: 34,
+      height: 34,
+      borderRadius: 17,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: c.chip,
     },
-    arrow: { fontSize: 22, fontWeight: '800', color: c.primary, lineHeight: 24 },
-    arrowDisabled: { color: c.subtext, opacity: 0.4 },
-    label: { fontSize: 16, fontWeight: '700', color: c.text, minWidth: 130, textAlign: 'center' },
+    label: { fontSize: 15, fontWeight: '700', color: c.text, minWidth: 124, textAlign: 'center' },
   });

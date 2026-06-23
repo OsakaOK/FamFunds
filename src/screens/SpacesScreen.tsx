@@ -14,10 +14,12 @@ import {
   View,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext';
-import { Colors } from '../lib/theme';
+import { useToast } from '../lib/ToastContext';
+import { Colors, cardShadow } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 import { RootStackParamList } from '../navigation/types';
 
@@ -39,6 +41,7 @@ function confirmLeave(name: string, onYes: () => void) {
 export default function SpacesScreen({ navigation }: Props) {
   const { spaces, currentSpaceId, currentSpace, isAdmin, switchSpace, refreshSpaces } = useAuth();
   const { colors } = useTheme();
+  const { showToast } = useToast();
   const styles = makeStyles(colors);
 
   const [familyName, setFamilyName] = useState('');
@@ -52,7 +55,7 @@ export default function SpacesScreen({ navigation }: Props) {
 
   async function handleCreate() {
     if (!familyName.trim()) {
-      Alert.alert('Name needed', 'Give your family a name.');
+      showToast('Give your family a name', 'error');
       return;
     }
     setBusy(true);
@@ -60,16 +63,17 @@ export default function SpacesScreen({ navigation }: Props) {
     if (!error) await refreshSpaces(data as string);
     setBusy(false);
     if (error) {
-      Alert.alert('Could not create', error.message);
+      showToast(error.message, 'error');
       return;
     }
+    showToast(`Created ${familyName.trim()}`, 'success');
     switchSpace(data as string);
     navigation.goBack();
   }
 
   async function handleJoin() {
     if (!joinCode.trim()) {
-      Alert.alert('Code needed', 'Enter the invite code.');
+      showToast('Enter an invite code', 'error');
       return;
     }
     setBusy(true);
@@ -77,9 +81,10 @@ export default function SpacesScreen({ navigation }: Props) {
     if (!error) await refreshSpaces(data as string);
     setBusy(false);
     if (error) {
-      Alert.alert('Could not join', error.message);
+      showToast(error.message, 'error');
       return;
     }
+    showToast('Joined space', 'success');
     switchSpace(data as string);
     navigation.goBack();
   }
@@ -90,17 +95,18 @@ export default function SpacesScreen({ navigation }: Props) {
     const { error } = await supabase.rpc('regenerate_invite_code', { space: currentSpaceId });
     if (!error) await refreshSpaces(currentSpaceId);
     setBusy(false);
-    if (error) Alert.alert('Could not regenerate', error.message);
+    showToast(error ? error.message : 'New invite code generated', error ? 'error' : 'success');
   }
 
   function handleLeave() {
     if (!currentSpace || currentSpace.kind !== 'family') return;
-    confirmLeave(currentSpace.name, async () => {
+    const name = currentSpace.name;
+    confirmLeave(name, async () => {
       setBusy(true);
       const { error } = await supabase.rpc('leave_space', { space: currentSpace.id });
       if (!error) await refreshSpaces();
       setBusy(false);
-      if (error) Alert.alert('Could not leave', error.message);
+      showToast(error ? error.message : `Left ${name}`, error ? 'error' : 'success');
     });
   }
 
@@ -115,21 +121,35 @@ export default function SpacesScreen({ navigation }: Props) {
             style={[styles.spaceRow, active && styles.spaceRowActive]}
             onPress={() => pick(s.id)}
           >
-            <View>
-              <Text style={styles.spaceName}>
-                {s.name}
-                {s.role === 'admin' ? '  👑' : ''}
-              </Text>
-              <Text style={styles.spaceKind}>
-                {s.kind === 'personal' ? 'Personal · private' : 'Family · shared'}
-              </Text>
+            <View style={styles.spaceLeft}>
+              <View style={styles.spaceIcon}>
+                <Ionicons
+                  name={s.kind === 'personal' ? 'lock-closed' : 'people'}
+                  size={18}
+                  color={colors.primary}
+                />
+              </View>
+              <View style={{ flexShrink: 1 }}>
+                <View style={styles.nameRow}>
+                  <Text style={styles.spaceName} numberOfLines={1}>
+                    {s.name}
+                  </Text>
+                  {s.role === 'admin' && (
+                    <View style={styles.adminPill}>
+                      <Text style={styles.adminPillText}>Admin</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.spaceKind}>
+                  {s.kind === 'personal' ? 'Personal · private' : 'Family · shared'}
+                </Text>
+              </View>
             </View>
-            {active && <Text style={styles.current}>Viewing</Text>}
+            {active && <Ionicons name="checkmark-circle" size={22} color={colors.primary} />}
           </TouchableOpacity>
         );
       })}
 
-      {/* Current family Space actions */}
       {currentSpace?.kind === 'family' && (
         <>
           <Text style={styles.sectionLabel}>CURRENT FAMILY · {currentSpace.name.toUpperCase()}</Text>
@@ -138,17 +158,18 @@ export default function SpacesScreen({ navigation }: Props) {
             <Text style={styles.code}>{currentSpace.inviteCode ?? '—'}</Text>
             {isAdmin && (
               <TouchableOpacity style={styles.secondaryBtn} onPress={handleRegenerate} disabled={busy}>
+                <Ionicons name="refresh" size={16} color={colors.primary} />
                 <Text style={styles.secondaryBtnText}>Regenerate code</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity style={styles.leaveBtn} onPress={handleLeave} disabled={busy}>
+              <Ionicons name="exit-outline" size={16} color={colors.danger} />
               <Text style={styles.leaveText}>Leave this space</Text>
             </TouchableOpacity>
           </View>
         </>
       )}
 
-      {/* Create / join */}
       <Text style={styles.sectionLabel}>CREATE A FAMILY SPACE</Text>
       <View style={styles.card}>
         <TextInput
@@ -209,17 +230,29 @@ const makeStyles = (c: Colors) =>
       justifyContent: 'space-between',
       alignItems: 'center',
       backgroundColor: c.card,
-      borderRadius: 12,
-      padding: 16,
+      borderRadius: 14,
+      padding: 14,
       marginBottom: 10,
       borderWidth: 2,
       borderColor: 'transparent',
+      ...cardShadow,
     },
     spaceRowActive: { borderColor: c.primary },
+    spaceLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 1 },
+    spaceIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: c.accentBg,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     spaceName: { fontSize: 16, fontWeight: '700', color: c.text },
+    adminPill: { backgroundColor: c.accentBg, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
+    adminPillText: { fontSize: 11, fontWeight: '700', color: c.primary },
     spaceKind: { fontSize: 13, color: c.subtext, marginTop: 2 },
-    current: { fontSize: 13, fontWeight: '700', color: c.primary },
-    card: { backgroundColor: c.card, borderRadius: 12, padding: 16 },
+    card: { backgroundColor: c.card, borderRadius: 14, padding: 16, ...cardShadow },
     help: { fontSize: 13, color: c.subtext, marginBottom: 6 },
     code: {
       fontSize: 28,
@@ -247,13 +280,23 @@ const makeStyles = (c: Colors) =>
     },
     primaryBtnText: { color: c.primaryText, fontSize: 16, fontWeight: '700' },
     secondaryBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
       borderWidth: 1,
       borderColor: c.primary,
       borderRadius: 10,
       paddingVertical: 12,
-      alignItems: 'center',
     },
     secondaryBtnText: { color: c.primary, fontSize: 15, fontWeight: '700' },
-    leaveBtn: { paddingVertical: 14, alignItems: 'center', marginTop: 4 },
+    leaveBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: 14,
+      marginTop: 4,
+    },
     leaveText: { color: c.danger, fontSize: 15, fontWeight: '700' },
   });

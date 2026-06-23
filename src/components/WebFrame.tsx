@@ -14,7 +14,7 @@ export default function WebFrame({ children }: { children: ReactNode }) {
 
   if (Platform.OS !== 'web') return <>{children}</>;
 
-  const gutter = mode === 'dark' ? '#000000' : '#d6dae1';
+  const gutter = mode === 'dark' ? '#070b09' : '#e4e0d4';
 
   return (
     <View style={[styles.outer, { backgroundColor: gutter }]}>

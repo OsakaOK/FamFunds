@@ -20,11 +20,8 @@ import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext';
 import { RootStackParamList } from './types';
 import LoginScreen from '../screens/LoginScreen';
-import HomeScreen from '../screens/HomeScreen';
+import MainTabs from './MainTabs';
 import AddExpenseScreen from '../screens/AddExpenseScreen';
-import BudgetsScreen from '../screens/BudgetsScreen';
-import MembersScreen from '../screens/MembersScreen';
-import ChartsScreen from '../screens/ChartsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SpacesScreen from '../screens/SpacesScreen';
 
@@ -71,26 +68,11 @@ export default function AppNavigator() {
           <Stack.Screen name="Login" component={LoginScreen} />
         ) : (
           <>
-            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="MainTabs" component={MainTabs} />
             <Stack.Screen
               name="AddExpense"
               component={AddExpenseScreen}
               options={{ ...headerOptions, title: 'Add expense', presentation: 'modal' }}
-            />
-            <Stack.Screen
-              name="Budgets"
-              component={BudgetsScreen}
-              options={{ ...headerOptions, title: 'Budgets' }}
-            />
-            <Stack.Screen
-              name="Members"
-              component={MembersScreen}
-              options={{ ...headerOptions, title: 'Family members' }}
-            />
-            <Stack.Screen
-              name="Charts"
-              component={ChartsScreen}
-              options={{ ...headerOptions, title: 'Charts' }}
             />
             <Stack.Screen
               name="Settings"

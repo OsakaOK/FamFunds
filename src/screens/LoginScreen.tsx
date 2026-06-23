@@ -4,7 +4,6 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -14,12 +13,14 @@ import {
 } from 'react-native';
 import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext';
+import { useToast } from '../lib/ToastContext';
 import { Colors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 
 export default function LoginScreen() {
   const { signIn, signUp } = useAuth();
   const { colors } = useTheme();
+  const { showToast } = useToast();
   const styles = makeStyles(colors);
 
   const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn');
@@ -31,7 +32,7 @@ export default function LoginScreen() {
 
   async function handleSubmit() {
     if (!email || !password) {
-      Alert.alert('Missing info', 'Please enter both email and password.');
+      showToast('Enter both email and password', 'error');
       return;
     }
     setBusy(true);
@@ -41,26 +42,20 @@ export default function LoginScreen() {
     setBusy(false);
 
     if (error) {
-      Alert.alert(isSignUp ? 'Sign up failed' : 'Sign in failed', error);
+      showToast(error, 'error');
     } else if (isSignUp) {
-      Alert.alert(
-        'Check your email',
-        'If email confirmation is on, tap the link we sent, then sign in.'
-      );
+      showToast('Account created — you can sign in', 'success');
       setMode('signIn');
     }
   }
 
   async function handleForgotPassword() {
     if (!email) {
-      Alert.alert('Enter your email', 'Type your email above first, then tap this.');
+      showToast('Type your email above first', 'error');
       return;
     }
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim());
-    Alert.alert(
-      error ? 'Could not send' : 'Email sent',
-      error ? error.message : 'Check your inbox for a password reset link.'
-    );
+    showToast(error ? error.message : 'Password reset email sent', error ? 'error' : 'success');
   }
 
   return (

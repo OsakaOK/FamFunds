@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   StyleSheet,
   Switch,
   Text,
@@ -11,14 +10,17 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext';
-import { Colors } from '../lib/theme';
+import { useToast } from '../lib/ToastContext';
+import { Colors, cardShadow } from '../lib/theme';
 
 export default function SettingsScreen() {
   const { email, profileName, updateProfileName, signOut } = useAuth();
   const { mode, colors, toggle } = useTheme();
+  const { showToast } = useToast();
   const styles = makeStyles(colors);
 
   const [name, setName] = useState(profileName ?? '');
@@ -26,27 +28,21 @@ export default function SettingsScreen() {
 
   async function handleSaveName() {
     if (!name.trim()) {
-      Alert.alert('Name needed', 'Enter a display name.');
+      showToast('Enter a display name', 'error');
       return;
     }
     setSaving(true);
     const { error } = await updateProfileName(name);
     setSaving(false);
-    if (error) {
-      Alert.alert('Could not save', error);
-      return;
-    }
-    Alert.alert('Saved', 'Your name has been updated.');
+    showToast(error ?? 'Name updated', error ? 'error' : 'success');
   }
 
   return (
     <View style={styles.container}>
-      {/* Display name */}
       <Text style={styles.sectionLabel}>YOUR NAME</Text>
       <View style={styles.card}>
         <Text style={styles.help}>
-          This is shown to your family instead of your email
-          {email ? ` (${email})` : ''}.
+          Shown to your family instead of your email{email ? ` (${email})` : ''}.
         </Text>
         <View style={styles.nameRow}>
           <TextInput
@@ -56,12 +52,9 @@ export default function SettingsScreen() {
             value={name}
             onChangeText={setName}
             editable={!saving}
+            autoCapitalize="words"
           />
-          <TouchableOpacity
-            style={styles.saveBtn}
-            onPress={handleSaveName}
-            disabled={saving}
-          >
+          <TouchableOpacity style={styles.saveBtn} onPress={handleSaveName} disabled={saving}>
             {saving ? (
               <ActivityIndicator color={colors.primaryText} size="small" />
             ) : (
@@ -71,13 +64,19 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* Appearance */}
       <Text style={styles.sectionLabel}>APPEARANCE</Text>
       <View style={styles.card}>
         <View style={styles.switchRow}>
-          <View>
-            <Text style={styles.switchTitle}>Dark mode</Text>
-            <Text style={styles.help}>Easier on the eyes at night.</Text>
+          <View style={styles.switchLabel}>
+            <Ionicons
+              name={mode === 'dark' ? 'moon' : 'sunny'}
+              size={20}
+              color={colors.primary}
+            />
+            <View>
+              <Text style={styles.switchTitle}>Dark mode</Text>
+              <Text style={styles.help}>Easier on the eyes at night.</Text>
+            </View>
           </View>
           <Switch
             value={mode === 'dark'}
@@ -87,9 +86,9 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* Account */}
       <Text style={styles.sectionLabel}>ACCOUNT</Text>
       <TouchableOpacity style={styles.signOutBtn} onPress={signOut}>
+        <Ionicons name="log-out-outline" size={18} color={colors.danger} />
         <Text style={styles.signOutText}>Sign out</Text>
       </TouchableOpacity>
     </View>
@@ -108,7 +107,7 @@ const makeStyles = (c: Colors) =>
       marginLeft: 4,
       letterSpacing: 0.5,
     },
-    card: { backgroundColor: c.card, borderRadius: 12, padding: 16 },
+    card: { backgroundColor: c.card, borderRadius: 14, padding: 16, ...cardShadow },
     help: { fontSize: 13, color: c.subtext, marginBottom: 12 },
     nameRow: { flexDirection: 'row', alignItems: 'center' },
     input: {
@@ -137,12 +136,17 @@ const makeStyles = (c: Colors) =>
       justifyContent: 'space-between',
       alignItems: 'center',
     },
+    switchLabel: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
     switchTitle: { fontSize: 16, fontWeight: '700', color: c.text },
     signOutBtn: {
       backgroundColor: c.card,
-      borderRadius: 12,
+      borderRadius: 14,
       padding: 16,
+      flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      ...cardShadow,
     },
     signOutText: { color: c.danger, fontSize: 16, fontWeight: '700' },
   });
