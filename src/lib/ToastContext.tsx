@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from './ThemeContext';
 
-type ToastType = 'success' | 'error' | 'info';
+type ToastType = 'success' | 'error' | 'info' | 'warning';
 
 type ToastContextValue = {
   showToast: (message: string, type?: ToastType) => void;
@@ -45,9 +45,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }
 
   const accent =
-    type === 'success' ? colors.success : type === 'error' ? colors.danger : colors.primary;
+    type === 'success'
+      ? colors.success
+      : type === 'error'
+        ? colors.danger
+        : type === 'warning'
+          ? colors.warning
+          : colors.primary;
   const icon =
-    type === 'success' ? 'checkmark-circle' : type === 'error' ? 'alert-circle' : 'information-circle';
+    type === 'success'
+      ? 'checkmark-circle'
+      : type === 'error'
+        ? 'alert-circle'
+        : type === 'warning'
+          ? 'warning'
+          : 'information-circle';
 
   return (
     <ToastContext.Provider value={{ showToast }}>

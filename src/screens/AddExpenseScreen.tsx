@@ -27,7 +27,7 @@ import { useTheme } from '../lib/ThemeContext';
 import { useToast } from '../lib/ToastContext';
 import { Colors } from '../lib/theme';
 import { supabase } from '../lib/supabase';
-import { todayLocal } from '../lib/dates';
+import { todayLocal, monthBounds } from '../lib/dates';
 import { CATEGORIES, CATEGORY_EMOJI, Category } from '../lib/categories';
 import { RootStackParamList } from '../navigation/types';
 
@@ -100,6 +100,51 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
     return true;
   }
 
+  // After saving, check this category's spend for the expense's month against its
+  // budget. Returns a message + how loud to be (over = amber warning, nearing =
+  // calm blue info), or null if comfortably within budget / no budget set.
+  async function getBudgetStatus(
+    spaceId: string,
+    cat: string,
+    expenseDate: string
+  ): Promise<{ message: string; level: 'warning' | 'info' } | null> {
+    const { start, endExclusive } = monthBounds(expenseDate);
+    await supabase.rpc('ensure_budget_month', { space: spaceId, m: start });
+
+    const { data: budget } = await supabase
+      .from('budgets')
+      .select('monthly_limit')
+      .eq('space_id', spaceId)
+      .eq('category', cat)
+      .eq('month', start)
+      .maybeSingle();
+    const limit = Number(budget?.monthly_limit ?? 0);
+    if (!(limit > 0)) return null;
+
+    const { data: rows } = await supabase
+      .from('expenses')
+      .select('amount')
+      .eq('space_id', spaceId)
+      .eq('category', cat)
+      .gte('spent_on', start)
+      .lt('spent_on', endExclusive);
+    const spent = (rows ?? []).reduce((s, r) => s + Number(r.amount), 0);
+
+    if (spent > limit) {
+      return {
+        message: `Over budget for ${cat}: $${spent.toFixed(2)} of $${limit.toFixed(2)}`,
+        level: 'warning',
+      };
+    }
+    if (spent >= limit * 0.8) {
+      return {
+        message: `${cat} is at ${Math.round((spent / limit) * 100)}% of budget`,
+        level: 'info',
+      };
+    }
+    return null;
+  }
+
   async function handleSave() {
     if (!validateAmount()) return;
     if (!userId || !currentSpaceId) return;
@@ -125,7 +170,14 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
       showToast(error.message, 'error');
       return;
     }
-    showToast(isEditing ? 'Expense updated' : 'Expense added', 'success');
+
+    // Flag over-budget (amber) or nearing-budget (calm blue); else confirm normally.
+    const status = await getBudgetStatus(currentSpaceId, category, date);
+    if (status) {
+      showToast(status.message, status.level);
+    } else {
+      showToast(isEditing ? 'Expense updated' : 'Expense added', 'success');
+    }
     navigation.goBack();
   }
 

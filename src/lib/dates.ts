@@ -47,3 +47,10 @@ export function monthRange(year: number, monthIndex: number) {
 export function monthLabel(year: number, monthIndex: number) {
   return `${MONTH_NAMES[monthIndex]} ${year}`;
 }
+
+// The [start, endExclusive) month range that contains a given 'YYYY-MM-DD' date.
+export function monthBounds(ymd: string) {
+  const year = Number(ymd.slice(0, 4));
+  const monthIndex = Number(ymd.slice(5, 7)) - 1;
+  return monthRange(year, monthIndex);
+}
