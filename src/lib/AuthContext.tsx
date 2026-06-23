@@ -11,8 +11,12 @@ import {
   useState,
   ReactNode,
 } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
+
+// Remembers which Space you were last viewing, so a page refresh keeps you there.
+const SPACE_KEY = 'famfunds.currentSpace';
 
 type AuthResult = { error: string | null };
 
@@ -104,13 +108,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     setSpaces(built);
 
-    setCurrentSpaceId((prev) => {
-      const ids = built.map((sp) => sp.id);
-      if (preferSpaceId && ids.includes(preferSpaceId)) return preferSpaceId;
-      if (prev && ids.includes(prev)) return prev; // keep current if still valid
-      const personal = built.find((sp) => sp.kind === 'personal');
-      return personal?.id ?? built[0]?.id ?? null;
-    });
+    // Pick which Space to view: explicit preference > last-viewed (saved) > Personal.
+    const ids = built.map((sp) => sp.id);
+    let target: string | null = null;
+    if (preferSpaceId && ids.includes(preferSpaceId)) {
+      target = preferSpaceId;
+    } else {
+      const stored = await AsyncStorage.getItem(SPACE_KEY);
+      if (stored && ids.includes(stored)) target = stored;
+    }
+    if (!target) {
+      target = built.find((sp) => sp.kind === 'personal')?.id ?? built[0]?.id ?? null;
+    }
+    setCurrentSpaceId(target);
+    if (target) AsyncStorage.setItem(SPACE_KEY, target);
   }
 
   useEffect(() => {
@@ -155,10 +166,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     setSpaces([]);
     setCurrentSpaceId(null);
+    AsyncStorage.removeItem(SPACE_KEY);
   }
 
   function switchSpace(spaceId: string) {
     setCurrentSpaceId(spaceId);
+    AsyncStorage.setItem(SPACE_KEY, spaceId); // remember across refreshes
   }
 
   async function refreshSpaces(preferSpaceId?: string) {
@@ -167,12 +180,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function updateProfileName(name: string): Promise<AuthResult> {
     if (!session) return { error: 'Not signed in' };
+    const trimmed = name.trim();
+
     const { error } = await supabase
       .from('profiles')
-      .update({ full_name: name.trim() })
+      .update({ full_name: trimmed })
       .eq('id', session.user.id);
-    if (!error) setProfileName(name.trim());
-    return { error: error?.message ?? null };
+    if (error) return { error: error.message };
+
+    setProfileName(trimmed);
+
+    // Refresh the attribution snapshot on your existing expenses so other members
+    // see the new name instead of the name/email captured when you logged them.
+    await supabase.from('expenses').update({ logger_name: trimmed }).eq('user_id', session.user.id);
+
+    return { error: null };
   }
 
   const email = session?.user.email ?? null;

@@ -8,6 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider } from './src/lib/ThemeContext';
 import { AuthProvider } from './src/lib/AuthContext';
 import { MonthProvider } from './src/lib/MonthContext';
+import WebFrame from './src/components/WebFrame';
 import AppNavigator from './src/navigation/AppNavigator';
 
 export default function App() {
@@ -16,7 +17,9 @@ export default function App() {
       <ThemeProvider>
         <AuthProvider>
           <MonthProvider>
-            <AppNavigator />
+            <WebFrame>
+              <AppNavigator />
+            </WebFrame>
           </MonthProvider>
         </AuthProvider>
       </ThemeProvider>

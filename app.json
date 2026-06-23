@@ -19,7 +19,16 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "name": "FamFunds",
+      "shortName": "FamFunds",
+      "description": "Track your family's spending together",
+      "lang": "en",
+      "themeColor": "#2563eb",
+      "backgroundColor": "#0b1120",
+      "display": "standalone",
+      "orientation": "portrait",
+      "startUrl": "/"
     },
     "plugins": [
       "expo-secure-store"
